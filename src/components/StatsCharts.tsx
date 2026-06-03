@@ -6,174 +6,218 @@ import {
 } from "recharts";
 import type { Stats } from "@/db/queries";
 
-const CLR_EDGE = "#5b8cff";
-const CLR_CORNER = "#37d399";
-const PALETTE = ["#5b8cff", "#37d399", "#ffb454", "#ff5d6c", "#b48cff", "#4ecbff", "#ffd866", "#ff85c0", "#8ce99a", "#c0c4cc"];
+const CLR_EDGE   = "#00d4ff";
+const CLR_CORNER = "#00ff94";
+const PALETTE    = ["#00d4ff","#00ff94","#a855f7","#ffd60a","#ff2d78","#ff9500","#b3ff00","#ff5af0","#00ffcc","#c0c4cc"];
 
-const cardCls = "rounded-xl border border-border bg-surface p-4";
-const titleCls = "mb-3 text-sm font-semibold text-muted uppercase tracking-wide";
+function colorOf(name: string, names: string[]) {
+  return PALETTE[names.indexOf(name) % PALETTE.length];
+}
+
+const TOOLTIP_STYLE = {
+  background: "#0b0f1a",
+  border: "1px solid #1a2540",
+  borderRadius: 10,
+  color: "#ddeeff",
+  fontSize: 12,
+};
+
+const GRID_COLOR = "#1a2540";
+const AXIS_COLOR = "#4a6080";
 
 function fmtDate(d: Date) {
-  return new Date(d).toLocaleString("de-CH", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" });
+  return new Date(d).toLocaleString("de-CH", {
+    day: "2-digit", month: "2-digit", year: "2-digit",
+    hour: "2-digit", minute: "2-digit",
+  });
 }
 
 export default function StatsCharts({ stats }: { stats: Stats }) {
   const { totalDnfs, totalEdges, totalCorners, perMacro, perSub, weekly, macroNames, recent } = stats;
+  const edgePct   = totalDnfs > 0 ? Math.round((totalEdges   / totalDnfs) * 100) : 0;
+  const cornerPct = totalDnfs > 0 ? Math.round((totalCorners / totalDnfs) * 100) : 0;
 
-  const colorOf = (name: string) => PALETTE[macroNames.indexOf(name) % PALETTE.length];
-  const edgePct = totalDnfs > 0 ? Math.round((totalEdges / totalDnfs) * 100) : 0;
-  const cornerPct = 100 - edgePct;
-
-  const pieceOverview = [
-    { name: "Edges", count: totalEdges },
+  const weeklyTotalData = weekly.map((w) => ({ week: w.week, Edges: w.edges, Corners: w.corners }));
+  const shareData       = weekly.map((w) => ({ week: w.week, ...w.shares }));
+  const pieceBar        = [
+    { name: "Edges",   count: totalEdges },
     { name: "Corners", count: totalCorners },
   ];
 
-  const weeklyTotalData = weekly.map((w) => ({ week: w.week, Edges: w.edges, Corners: w.corners }));
-  const shareData = weekly.map((w) => ({ week: w.week, ...w.shares }));
-
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold tracking-tight">Statistiken</h1>
-
-      {/* Summary row */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <SummaryCard label="Fehler gesamt" value={totalDnfs} />
-        <SummaryCard label="Edges" value={totalEdges} sub={`${edgePct}%`} color={CLR_EDGE} />
-        <SummaryCard label="Corners" value={totalCorners} sub={`${cornerPct}%`} color={CLR_CORNER} />
-        <SummaryCard label="Häufigster Grund" value={perMacro[0]?.name ?? "–"} sub={perMacro[0] ? `${perMacro[0].count}×` : ""} />
+      <div>
+        <h1 className="text-3xl font-black tracking-tight">
+          Statistiken <span className="text-gradient">Analyse</span>
+        </h1>
+        <p className="text-sm text-muted">Alle deine erfassten DNF-Fehler im Überblick.</p>
       </div>
 
-      {/* Edges vs Corners per macro — stacked bar */}
-      <div className={cardCls}>
-        <div className={titleCls}>Häufigkeit pro Grund (Edges / Corners)</div>
-        <ResponsiveContainer width="100%" height={Math.max(160, perMacro.length * 44)}>
+      {/* Summary cards */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <GlowCard label="Fehler gesamt" value={totalDnfs} color="neutral" />
+        <GlowCard label="Edges" value={totalEdges} sub={`${edgePct}%`} color="blue" />
+        <GlowCard label="Corners" value={totalCorners} sub={`${cornerPct}%`} color="green" />
+        <GlowCard label="Häufigster" value={perMacro[0]?.name ?? "–"} sub={perMacro[0] ? `${perMacro[0].count}×` : ""} color="purple" />
+      </div>
+
+      {/* Frequency per macro stacked E/C */}
+      <ChartCard title="Häufigkeit pro Grund">
+        <ResponsiveContainer width="100%" height={Math.max(170, perMacro.length * 46)}>
           <BarChart
             data={perMacro.map((m) => ({ name: m.name, Edges: m.edges, Corners: m.corners }))}
             layout="vertical"
-            margin={{ left: 8, right: 16 }}
+            margin={{ left: 8, right: 20 }}
           >
-            <CartesianGrid strokeDasharray="3 3" stroke="#2a3343" horizontal={false} />
-            <XAxis type="number" stroke="#8a94a6" allowDecimals={false} />
-            <YAxis type="category" dataKey="name" width={140} stroke="#8a94a6" tick={{ fontSize: 12 }} />
-            <Tooltip contentStyle={{ background: "#151a23", border: "1px solid #2a3343", borderRadius: 8 }} cursor={{ fill: "#ffffff08" }} />
-            <Legend wrapperStyle={{ fontSize: 12 }} />
-            <Bar dataKey="Edges" stackId="a" fill={CLR_EDGE} radius={[0, 0, 0, 0]} />
-            <Bar dataKey="Corners" stackId="a" fill={CLR_CORNER} radius={[0, 4, 4, 0]} />
+            <CartesianGrid strokeDasharray="3 3" stroke={GRID_COLOR} horizontal={false} />
+            <XAxis type="number" stroke={AXIS_COLOR} tick={{ fill: AXIS_COLOR, fontSize: 11 }} allowDecimals={false} />
+            <YAxis type="category" dataKey="name" width={145} stroke={AXIS_COLOR} tick={{ fill: "#ddeeff", fontSize: 12 }} />
+            <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: "rgba(255,255,255,0.04)" }} />
+            <Legend wrapperStyle={{ fontSize: 12, color: "#4a6080" }} />
+            <Bar dataKey="Edges"   stackId="a" fill={CLR_EDGE}   radius={[0,0,0,0]} />
+            <Bar dataKey="Corners" stackId="a" fill={CLR_CORNER} radius={[0,4,4,0]} />
           </BarChart>
         </ResponsiveContainer>
-      </div>
+      </ChartCard>
 
-      {/* Edges vs Corners split (donut-style: simple two bars) */}
-      <div className={cardCls}>
-        <div className={titleCls}>Edges vs. Corners — Gesamtverteilung</div>
+      {/* E vs C split */}
+      <ChartCard title="Edges vs. Corners">
         <ResponsiveContainer width="100%" height={100}>
-          <BarChart data={pieceOverview} layout="vertical" margin={{ left: 8, right: 16 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#2a3343" horizontal={false} />
-            <XAxis type="number" stroke="#8a94a6" allowDecimals={false} />
-            <YAxis type="category" dataKey="name" width={70} stroke="#8a94a6" tick={{ fontSize: 13 }} />
-            <Tooltip contentStyle={{ background: "#151a23", border: "1px solid #2a3343", borderRadius: 8 }} cursor={{ fill: "#ffffff08" }} />
-            <Bar dataKey="count" name="Fehler" radius={[0, 4, 4, 0]}>
-              <Cell fill={CLR_EDGE} />
-              <Cell fill={CLR_CORNER} />
+          <BarChart data={pieceBar} layout="vertical" margin={{ left: 8, right: 20 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke={GRID_COLOR} horizontal={false} />
+            <XAxis type="number" stroke={AXIS_COLOR} tick={{ fill: AXIS_COLOR, fontSize: 11 }} allowDecimals={false} />
+            <YAxis type="category" dataKey="name" width={72} stroke={AXIS_COLOR} tick={{ fill: "#ddeeff", fontSize: 13 }} />
+            <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: "rgba(255,255,255,0.04)" }} />
+            <Bar dataKey="count" name="Fehler" radius={[0,4,4,0]}>
+              <Cell fill={CLR_EDGE}   key="edges" />
+              <Cell fill={CLR_CORNER} key="corners" />
             </Bar>
           </BarChart>
         </ResponsiveContainer>
-      </div>
+      </ChartCard>
 
-      {/* Weekly Edges + Corners trend */}
-      <div className={cardCls}>
-        <div className={titleCls}>Verlauf über Zeit — Fehler pro Woche</div>
+      {/* Weekly trend E/C */}
+      <ChartCard title="Verlauf — Fehler pro Woche">
         <ResponsiveContainer width="100%" height={240}>
-          <LineChart data={weeklyTotalData} margin={{ left: 0, right: 16 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#2a3343" />
-            <XAxis dataKey="week" stroke="#8a94a6" tick={{ fontSize: 11 }} />
-            <YAxis stroke="#8a94a6" allowDecimals={false} />
-            <Tooltip contentStyle={{ background: "#151a23", border: "1px solid #2a3343", borderRadius: 8 }} />
-            <Legend wrapperStyle={{ fontSize: 12 }} />
-            <Line type="monotone" dataKey="Edges" stroke={CLR_EDGE} strokeWidth={2} dot={{ r: 2 }} />
-            <Line type="monotone" dataKey="Corners" stroke={CLR_CORNER} strokeWidth={2} dot={{ r: 2 }} />
+          <LineChart data={weeklyTotalData} margin={{ left: 0, right: 20 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke={GRID_COLOR} />
+            <XAxis dataKey="week" stroke={AXIS_COLOR} tick={{ fill: AXIS_COLOR, fontSize: 11 }} />
+            <YAxis stroke={AXIS_COLOR} tick={{ fill: AXIS_COLOR }} allowDecimals={false} />
+            <Tooltip contentStyle={TOOLTIP_STYLE} />
+            <Legend wrapperStyle={{ fontSize: 12, color: "#4a6080" }} />
+            <Line type="monotone" dataKey="Edges"   stroke={CLR_EDGE}   strokeWidth={2.5} dot={{ r: 3, fill: CLR_EDGE }}   />
+            <Line type="monotone" dataKey="Corners" stroke={CLR_CORNER} strokeWidth={2.5} dot={{ r: 3, fill: CLR_CORNER }} />
           </LineChart>
         </ResponsiveContainer>
-      </div>
+      </ChartCard>
 
-      {/* Relative share per macro per week */}
-      <div className={cardCls}>
-        <div className={titleCls}>Relative Häufigkeit pro Grund (% je Woche)</div>
+      {/* Relative share trend */}
+      <ChartCard title="Relative Häufigkeit pro Grund (% je Woche)">
         <ResponsiveContainer width="100%" height={280}>
-          <LineChart data={shareData} margin={{ left: 0, right: 16 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#2a3343" />
-            <XAxis dataKey="week" stroke="#8a94a6" tick={{ fontSize: 11 }} />
-            <YAxis stroke="#8a94a6" unit="%" domain={[0, 100]} />
-            <Tooltip contentStyle={{ background: "#151a23", border: "1px solid #2a3343", borderRadius: 8 }} formatter={(v: number) => `${v}%`} />
-            <Legend wrapperStyle={{ fontSize: 12 }} />
+          <LineChart data={shareData} margin={{ left: 0, right: 20 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke={GRID_COLOR} />
+            <XAxis dataKey="week" stroke={AXIS_COLOR} tick={{ fill: AXIS_COLOR, fontSize: 11 }} />
+            <YAxis stroke={AXIS_COLOR} tick={{ fill: AXIS_COLOR }} unit="%" domain={[0, 100]} />
+            <Tooltip contentStyle={TOOLTIP_STYLE} formatter={(v: number) => `${v}%`} />
+            <Legend wrapperStyle={{ fontSize: 12, color: "#4a6080" }} />
             {macroNames.map((name) => (
-              <Line key={name} type="monotone" dataKey={name} stroke={colorOf(name)} strokeWidth={2} dot={false} connectNulls />
+              <Line
+                key={name}
+                type="monotone"
+                dataKey={name}
+                stroke={colorOf(name, macroNames)}
+                strokeWidth={2}
+                dot={false}
+                connectNulls
+              />
             ))}
           </LineChart>
         </ResponsiveContainer>
-      </div>
+      </ChartCard>
 
       {/* Sub breakdown */}
       {perSub.length > 0 && (
-        <div className={cardCls}>
-          <div className={titleCls}>Häufigkeit pro Unterkategorie</div>
-          <ul className="divide-y divide-border">
+        <ChartCard title="Unterkategorie-Aufschlüsselung">
+          <ul className="divide-y divide-border/50">
             {perSub.map((s) => (
-              <li key={`${s.macroName}-${s.subName}`} className="flex items-center justify-between py-2 text-sm">
-                <span><span className="text-muted">{s.macroName} →</span> {s.subName}</span>
+              <li key={`${s.macroName}-${s.subName}`}
+                  className="flex items-center justify-between py-2.5 text-sm">
+                <span>
+                  <span className="text-muted">{s.macroName} →</span>{" "}
+                  <span className="font-medium text-white/90">{s.subName}</span>
+                </span>
                 <div className="flex items-center gap-3 font-mono text-xs">
                   <span style={{ color: CLR_EDGE }}>{s.edges}E</span>
                   <span style={{ color: CLR_CORNER }}>{s.corners}C</span>
-                  <span className="font-semibold">{s.count}×</span>
+                  <span className="font-bold text-white/70">{s.count}×</span>
                 </div>
               </li>
             ))}
           </ul>
-        </div>
+        </ChartCard>
       )}
 
       {/* Recent log */}
-      <div className={cardCls}>
-        <div className={titleCls}>Letzte Fehler</div>
+      <ChartCard title="Letzte Fehler">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-left text-muted">
-                <th className="pb-2 font-medium">Zeitpunkt</th>
-                <th className="pb-2 font-medium">Piece</th>
-                <th className="pb-2 font-medium">Grund</th>
-                <th className="pb-2 font-medium">Unterkategorie</th>
+              <tr className="text-left">
+                <th className="pb-3 font-medium text-muted text-xs uppercase tracking-wider">Zeitpunkt</th>
+                <th className="pb-3 font-medium text-muted text-xs uppercase tracking-wider">Piece</th>
+                <th className="pb-3 font-medium text-muted text-xs uppercase tracking-wider">Grund</th>
+                <th className="pb-3 font-medium text-muted text-xs uppercase tracking-wider">Sub</th>
               </tr>
             </thead>
             <tbody>
               {recent.map((r) => (
-                <tr key={r.id} className="border-t border-border">
-                  <td className="py-2 font-mono text-xs text-muted">{fmtDate(r.occurredAt)}</td>
-                  <td className="py-2">
-                    <span className={`rounded px-1.5 py-0.5 text-xs font-semibold ${
-                      r.pieceType === "edges" ? "bg-accent/15 text-accent" : "bg-accent-2/15 text-accent-2"
+                <tr key={r.id} className="border-t border-border/40 hover:bg-surface-2/50 transition-colors">
+                  <td className="py-2.5 font-mono text-xs text-muted">{fmtDate(r.occurredAt)}</td>
+                  <td className="py-2.5">
+                    <span className={`rounded-md border px-2 py-0.5 text-xs font-bold ${
+                      r.pieceType === "edges"
+                        ? "border-accent/30 bg-accent/10 text-accent"
+                        : "border-accent-2/30 bg-accent-2/10 text-accent-2"
                     }`}>
                       {r.pieceType === "edges" ? "E" : "C"}
                     </span>
                   </td>
-                  <td className="py-2">{r.macroName}</td>
-                  <td className="py-2 text-muted">{r.subName ?? "–"}</td>
+                  <td className="py-2.5 font-medium">{r.macroName}</td>
+                  <td className="py-2.5 text-muted">{r.subName ?? "–"}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-      </div>
+      </ChartCard>
     </div>
   );
 }
 
-function SummaryCard({ label, value, sub, color }: { label: string; value: string | number; sub?: string; color?: string }) {
+function ChartCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className={cardCls}>
-      <div className="text-xs uppercase tracking-wide text-muted">{label}</div>
-      <div className="mt-1 truncate text-2xl font-bold" style={color ? { color } : undefined} title={String(value)}>
+    <div className="rounded-2xl border border-border/70 bg-surface/70 p-5 backdrop-blur">
+      <div className="mb-4 text-xs font-bold uppercase tracking-widest text-muted">{title}</div>
+      {children}
+    </div>
+  );
+}
+
+function GlowCard({ label, value, sub, color }: {
+  label: string; value: string | number; sub?: string;
+  color: "blue" | "green" | "purple" | "neutral";
+}) {
+  const styles: Record<typeof color, { border: string; text: string; glow: string }> = {
+    blue:    { border: "border-accent/30",    text: "text-accent",    glow: "shadow-neon-blue-sm" },
+    green:   { border: "border-accent-2/30",  text: "text-accent-2",  glow: "shadow-neon-green-sm" },
+    purple:  { border: "border-purple/30",    text: "text-purple",    glow: "" },
+    neutral: { border: "border-border/70",    text: "text-white",     glow: "" },
+  };
+  const s = styles[color];
+  return (
+    <div className={`rounded-2xl border bg-surface/70 p-4 backdrop-blur ${s.border} ${s.glow}`}>
+      <div className="text-xs uppercase tracking-widest text-muted">{label}</div>
+      <div className={`mt-1 truncate text-2xl font-black ${s.text}`} title={String(value)}>
         {value}
       </div>
       {sub && <div className="text-xs text-muted">{sub}</div>}

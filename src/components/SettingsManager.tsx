@@ -32,16 +32,19 @@ export default function SettingsManager({ macros }: { macros: MacroWithSubs[] })
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Kategorien & Shortcuts</h1>
-        <p className="text-sm text-muted">
-          Lege Makro-Kategorien und Unterkategorien an. Lass das Shortcut-Feld leer, um automatisch{" "}
+        <h1 className="text-3xl font-black tracking-tight">
+          Kategorien <span className="text-gradient">&amp; Shortcuts</span>
+        </h1>
+        <p className="mt-1 text-sm text-muted">
+          Lege Makro-Kategorien und Unterkategorien an. Leeres Shortcut-Feld → automatisch{" "}
           <kbd className="rounded border border-border bg-surface-2 px-1">1</kbd>,{" "}
-          <kbd className="rounded border border-border bg-surface-2 px-1">2</kbd> … zu vergeben.
+          <kbd className="rounded border border-border bg-surface-2 px-1">2</kbd> …
         </p>
       </div>
 
       {error && (
-        <div className="rounded-lg border border-danger/40 bg-danger/10 px-4 py-2.5 text-sm text-danger">
+        <div className="rounded-xl border border-danger/40 bg-danger/10 px-4 py-3 text-sm font-medium text-danger"
+          style={{ boxShadow: "0 0 16px rgba(255,45,120,0.15)" }}>
           {error}
         </div>
       )}
@@ -50,25 +53,26 @@ export default function SettingsManager({ macros }: { macros: MacroWithSubs[] })
       <form
         action={(fd) => run(createMacro, fd, () => (document.getElementById("new-macro-form") as HTMLFormElement)?.reset())}
         id="new-macro-form"
-        className="flex flex-wrap items-end gap-2 rounded-xl border border-border bg-surface p-4"
+        className="flex flex-wrap items-end gap-2 rounded-2xl border border-accent/25 bg-accent/[0.04] p-4"
+        style={{ boxShadow: "0 0 20px rgba(0,212,255,0.06)" }}
       >
         <Field label="Neue Makro-Kategorie" name="name" placeholder="z.B. Memo-Fehler" className="min-w-[200px] flex-1" />
         <Field label="Shortcut" name="shortcut" placeholder="1" maxLength={1} className="w-20" />
-        <button className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white hover:opacity-90">
-          Hinzufügen
+        <button className="rounded-xl border border-accent/40 bg-accent/15 px-4 py-2 text-sm font-bold text-accent transition-all hover:bg-accent/25 hover:shadow-neon-blue-sm">
+          + Hinzufügen
         </button>
       </form>
 
       {/* Macro list */}
       <div className="space-y-4">
         {macros.length === 0 && (
-          <p className="rounded-xl border border-dashed border-border bg-surface p-6 text-center text-muted">
-            Noch keine Kategorien angelegt.
+          <p className="rounded-2xl border border-dashed border-border/60 bg-surface/40 p-8 text-center text-muted">
+            Noch keine Kategorien angelegt. Leg oben los!
           </p>
         )}
 
         {macros.map((m, i) => (
-          <div key={m.id} className="rounded-xl border border-border bg-surface">
+          <div key={m.id} className="rounded-2xl border border-border/70 bg-surface/70 backdrop-blur">
             {/* Macro row */}
             <div className="flex flex-wrap items-end gap-2 border-b border-border p-4">
               <form
@@ -78,7 +82,7 @@ export default function SettingsManager({ macros }: { macros: MacroWithSubs[] })
                 <input type="hidden" name="id" value={m.id} />
                 <Field label="Makro-Kategorie" name="name" defaultValue={m.name} className="min-w-[200px] flex-1" />
                 <Field label="Shortcut" name="shortcut" defaultValue={m.shortcut ?? ""} maxLength={1} className="w-20" placeholder={String(i + 1)} />
-                <button className="rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm hover:border-accent">
+                <button className="rounded-xl border border-border bg-surface-2 px-3 py-2 text-sm font-medium transition-all hover:border-accent/60 hover:text-accent">
                   Speichern
                 </button>
               </form>
@@ -102,7 +106,7 @@ export default function SettingsManager({ macros }: { macros: MacroWithSubs[] })
                     <span className="pb-2 text-xs text-muted">↳</span>
                     <Field label="" name="name" defaultValue={s.name} className="min-w-[180px] flex-1" />
                     <Field label="" name="shortcut" defaultValue={s.shortcut ?? ""} maxLength={1} className="w-16" placeholder={String(j + 1)} />
-                    <button className="rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm hover:border-accent-2">
+                    <button className="rounded-xl border border-border bg-surface-2 px-3 py-2 text-sm font-medium transition-all hover:border-accent-2/60 hover:text-accent-2">
                       Speichern
                     </button>
                   </form>
@@ -124,7 +128,7 @@ export default function SettingsManager({ macros }: { macros: MacroWithSubs[] })
                 <span className="pb-2 text-xs text-muted">+</span>
                 <Field label="" name="name" placeholder="Neue Unterkategorie" className="min-w-[180px] flex-1" />
                 <Field label="" name="shortcut" placeholder="#" maxLength={1} className="w-16" />
-                <button className="rounded-lg border border-dashed border-border px-3 py-2 text-sm text-muted hover:border-accent-2 hover:text-white">
+                <button className="rounded-xl border border-dashed border-accent-2/20 px-3 py-2 text-sm text-muted transition-all hover:border-accent-2/60 hover:text-accent-2">
                   + Sub
                 </button>
               </form>
@@ -160,7 +164,7 @@ function Field({
         placeholder={placeholder}
         maxLength={maxLength}
         autoComplete="off"
-        className="rounded-lg border border-border bg-bg px-3 py-2 text-sm outline-none focus:border-accent"
+        className="rounded-xl border border-border bg-bg px-3 py-2 text-sm outline-none transition-colors focus:border-accent/60 focus:shadow-neon-blue-sm"
       />
     </label>
   );
@@ -187,7 +191,7 @@ function IconForm({
       ))}
       <button
         disabled={disabled}
-        className="rounded-md border border-border bg-surface-2 px-2 py-2 text-xs leading-none hover:border-accent disabled:opacity-30"
+        className="rounded-lg border border-border/60 bg-surface-2 px-2 py-2 text-xs leading-none transition-all hover:border-accent/50 disabled:opacity-25"
       >
         {label}
       </button>
@@ -212,7 +216,7 @@ function DeleteButton({
       }}
     >
       <input type="hidden" name="id" value={id} />
-      <button className="rounded-md border border-danger/40 bg-danger/10 px-2 py-2 text-xs leading-none text-danger hover:bg-danger/20">
+      <button className="rounded-lg border border-danger/30 bg-danger/8 px-2 py-2 text-xs leading-none text-danger transition-all hover:bg-danger/20 hover:border-danger/60">
         ✕
       </button>
     </form>

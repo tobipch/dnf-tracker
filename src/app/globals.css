@@ -2,16 +2,60 @@
 @tailwind components;
 @tailwind utilities;
 
-html,
-body {
-  background-color: #0b0e14;
-  color: #e6e9ef;
+html, body {
+  background-color: #05070d;
+  color: #ddeeff;
 }
 
-* {
-  -webkit-tap-highlight-color: transparent;
+/* Subtle dot-grid texture */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background-image: radial-gradient(rgba(0, 212, 255, 0.06) 1px, transparent 1px);
+  background-size: 32px 32px;
+  pointer-events: none;
+  z-index: 0;
 }
 
-kbd {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+/* Ambient top glow */
+body::after {
+  content: "";
+  position: fixed;
+  top: -200px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 900px;
+  height: 400px;
+  background: radial-gradient(ellipse, rgba(0, 212, 255, 0.07) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+main  { position: relative; z-index: 1; }
+header { position: relative; z-index: 2; }
+
+* { -webkit-tap-highlight-color: transparent; }
+
+kbd { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+@layer utilities {
+  .text-gradient {
+    background: linear-gradient(135deg, #00d4ff 0%, #a855f7 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .text-gradient-green {
+    background: linear-gradient(135deg, #00ff94 0%, #00d4ff 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .text-gradient-fire {
+    background: linear-gradient(135deg, #ffd60a 0%, #ff2d78 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
 }
