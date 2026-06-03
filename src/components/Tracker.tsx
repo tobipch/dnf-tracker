@@ -5,47 +5,39 @@ import Link from "next/link";
 import type { MacroWithSubs } from "@/db/queries";
 import { recordDnf, undoLastDnf } from "@/app/actions";
 
+type PieceType = "edges" | "corners";
+type Step = "piece" | "macro" | "sub";
 type Toast = { kind: "ok" | "err"; text: string } | null;
 
-/** Fallback shortcut for the nth item (0-indexed) when none is configured. */
 function fallbackKey(index: number): string | null {
-  if (index < 9) return String(index + 1); // 1..9
+  if (index < 9) return String(index + 1);
   if (index === 9) return "0";
   return null;
 }
 
-/** Builds index -> effective shortcut, and a lookup key -> index. */
 function buildKeyMap<T extends { shortcut: string | null }>(items: T[]) {
-  const effective: (string | null)[] = [];
   const used = new Set<string>();
-  // First pass: explicit shortcuts win.
-  items.forEach((it) => {
-    const s = it.shortcut?.toLowerCase() ?? null;
-    if (s && !used.has(s)) used.add(s);
-  });
-  // Second pass: assign effective key per item (explicit, else first free fallback).
-  items.forEach((it, i) => {
+  items.forEach((it) => { if (it.shortcut) used.add(it.shortcut.toLowerCase()); });
+
+  const effective: (string | null)[] = items.map((it, i) => {
     const explicit = it.shortcut?.toLowerCase() ?? null;
-    if (explicit) {
-      effective[i] = explicit;
-      return;
-    }
+    if (explicit) return explicit;
     const fb = fallbackKey(i);
-    if (fb && !used.has(fb)) {
-      used.add(fb);
-      effective[i] = fb;
-    } else {
-      effective[i] = null;
-    }
+    if (fb && !used.has(fb)) { used.add(fb); return fb; }
+    return null;
   });
+
   const lookup = new Map<string, number>();
-  effective.forEach((k, i) => {
-    if (k && !lookup.has(k)) lookup.set(k, i);
-  });
+  effective.forEach((k, i) => { if (k && !lookup.has(k)) lookup.set(k, i); });
   return { effective, lookup };
 }
 
+const PIECE_LABELS: Record<PieceType, string> = { edges: "Edges", corners: "Corners" };
+const PIECE_KEYS: Record<string, PieceType> = { e: "edges", c: "corners" };
+
 export default function Tracker({ macros }: { macros: MacroWithSubs[] }) {
+  const [step, setStep] = useState<Step>("piece");
+  const [pieceType, setPieceType] = useState<PieceType | null>(null);
   const [selectedMacroId, setSelectedMacroId] = useState<number | null>(null);
   const [toast, setToast] = useState<Toast>(null);
   const [isPending, startTransition] = useTransition();
@@ -56,51 +48,60 @@ export default function Tracker({ macros }: { macros: MacroWithSubs[] }) {
   );
 
   const macroKeys = useMemo(() => buildKeyMap(macros), [macros]);
-  const subKeys = useMemo(
-    () => buildKeyMap(selectedMacro?.subs ?? []),
-    [selectedMacro]
-  );
+  const subKeys = useMemo(() => buildKeyMap(selectedMacro?.subs ?? []), [selectedMacro]);
 
   const flash = useCallback((t: Toast) => {
     setToast(t);
     if (t) window.setTimeout(() => setToast(null), 2200);
   }, []);
 
+  const reset = useCallback(() => {
+    setStep("piece");
+    setPieceType(null);
+    setSelectedMacroId(null);
+  }, []);
+
   const book = useCallback(
-    (macroId: number, subId: number | null, label: string) => {
+    (pt: PieceType, macroId: number, subId: number | null, label: string) => {
       startTransition(async () => {
-        const res = await recordDnf(macroId, subId);
+        const res = await recordDnf(pt, macroId, subId);
         if (res.ok) {
-          flash({ kind: "ok", text: `DNF gespeichert: ${label}` });
-          setSelectedMacroId(null);
+          flash({ kind: "ok", text: `${PIECE_LABELS[pt]}: ${label}` });
+          reset();
         } else {
           flash({ kind: "err", text: res.error });
         }
       });
     },
-    [flash]
+    [flash, reset]
   );
+
+  const selectPiece = useCallback((pt: PieceType) => {
+    setPieceType(pt);
+    setStep("macro");
+  }, []);
 
   const selectMacro = useCallback(
     (macro: MacroWithSubs) => {
+      if (!pieceType) return;
       if (macro.subs.length === 0) {
-        // No sub categories -> book immediately at macro level.
-        book(macro.id, null, macro.name);
+        book(pieceType, macro.id, null, macro.name);
       } else {
         setSelectedMacroId(macro.id);
+        setStep("sub");
       }
     },
-    [book]
+    [pieceType, book]
   );
 
   const selectSub = useCallback(
     (subIndex: number) => {
-      if (!selectedMacro) return;
+      if (!selectedMacro || !pieceType) return;
       const sub = selectedMacro.subs[subIndex];
       if (!sub) return;
-      book(selectedMacro.id, sub.id, `${selectedMacro.name} → ${sub.name}`);
+      book(pieceType, selectedMacro.id, sub.id, `${selectedMacro.name} → ${sub.name}`);
     },
-    [selectedMacro, book]
+    [selectedMacro, pieceType, book]
   );
 
   const undo = useCallback(() => {
@@ -110,7 +111,6 @@ export default function Tracker({ macros }: { macros: MacroWithSubs[] }) {
     });
   }, [flash]);
 
-  // Keyboard handling
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
@@ -120,36 +120,34 @@ export default function Tracker({ macros }: { macros: MacroWithSubs[] }) {
       const key = e.key.toLowerCase();
 
       if (key === "escape") {
-        if (selectedMacroId !== null) {
-          e.preventDefault();
-          setSelectedMacroId(null);
-        }
-        return;
-      }
-
-      if (key === "u") {
         e.preventDefault();
-        undo();
+        if (step === "sub") { setStep("macro"); setSelectedMacroId(null); }
+        else if (step === "macro") { setStep("piece"); setPieceType(null); }
         return;
       }
 
-      if (selectedMacroId === null) {
+      if (key === "u") { e.preventDefault(); undo(); return; }
+
+      if (step === "piece") {
+        const pt = PIECE_KEYS[key];
+        if (pt) { e.preventDefault(); selectPiece(pt); }
+        return;
+      }
+
+      if (step === "macro") {
         const idx = macroKeys.lookup.get(key);
-        if (idx !== undefined && macros[idx]) {
-          e.preventDefault();
-          selectMacro(macros[idx]);
-        }
-      } else {
+        if (idx !== undefined && macros[idx]) { e.preventDefault(); selectMacro(macros[idx]); }
+        return;
+      }
+
+      if (step === "sub") {
         const idx = subKeys.lookup.get(key);
-        if (idx !== undefined) {
-          e.preventDefault();
-          selectSub(idx);
-        }
+        if (idx !== undefined) { e.preventDefault(); selectSub(idx); }
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [macros, macroKeys, subKeys, selectedMacroId, selectMacro, selectSub, undo]);
+  }, [step, macros, macroKeys, subKeys, selectPiece, selectMacro, selectSub, undo]);
 
   if (macros.length === 0) {
     return (
@@ -158,10 +156,7 @@ export default function Tracker({ macros }: { macros: MacroWithSubs[] }) {
         <p className="mt-2 text-muted">
           Lege zuerst deine DNF-Gründe an, dann kannst du sie hier per Klick oder Tastatur erfassen.
         </p>
-        <Link
-          href="/settings"
-          className="mt-5 inline-block rounded-lg bg-accent px-5 py-2.5 font-medium text-white hover:opacity-90"
-        >
+        <Link href="/settings" className="mt-5 inline-block rounded-lg bg-accent px-5 py-2.5 font-medium text-white hover:opacity-90">
           Kategorien anlegen →
         </Link>
       </div>
@@ -170,30 +165,54 @@ export default function Tracker({ macros }: { macros: MacroWithSubs[] }) {
 
   return (
     <div className="relative">
+      {/* Header */}
       <div className="mb-5 flex items-end justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">
-            {selectedMacro ? selectedMacro.name : "DNF erfassen"}
+            {step === "piece" && "DNF erfassen"}
+            {step === "macro" && <>{PieceBadge(pieceType!)} Grund wählen</>}
+            {step === "sub" && <>{PieceBadge(pieceType!)} {selectedMacro?.name}</>}
           </h1>
           <p className="text-sm text-muted">
-            {selectedMacro
-              ? "Wähle eine Unterkategorie (Klick oder Taste)."
-              : "Wähle den Grund per Klick oder Tastatur."}
+            {step === "piece" && "Wo ist der Fehler passiert?"}
+            {step === "macro" && "Welche Art von Fehler?"}
+            {step === "sub" && "Unterkategorie wählen."}
           </p>
         </div>
-        <div className="flex items-center gap-2 text-xs text-muted">
+        <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
+          {step !== "piece" && (
+            <><kbd className="rounded border border-border bg-surface-2 px-1.5 py-0.5">Esc</kbd><span>zurück</span></>
+          )}
           <kbd className="rounded border border-border bg-surface-2 px-1.5 py-0.5">U</kbd>
           <span>rückgängig</span>
-          {selectedMacro && (
-            <>
-              <kbd className="rounded border border-border bg-surface-2 px-1.5 py-0.5">Esc</kbd>
-              <span>zurück</span>
-            </>
-          )}
         </div>
       </div>
 
-      {!selectedMacro ? (
+      {/* Breadcrumb */}
+      {step !== "piece" && (
+        <div className="mb-4 flex items-center gap-2 text-xs text-muted">
+          <button onClick={reset} className="hover:text-white">Start</button>
+          <span>/</span>
+          <span className={step === "macro" ? "text-white" : "hover:text-white cursor-pointer"}
+            onClick={() => step === "sub" && (() => { setStep("macro"); setSelectedMacroId(null); })()}>
+            {PIECE_LABELS[pieceType!]}
+          </span>
+          {step === "sub" && (
+            <><span>/</span><span className="text-white">{selectedMacro?.name}</span></>
+          )}
+        </div>
+      )}
+
+      {/* Step: Piece type */}
+      {step === "piece" && (
+        <div className="grid grid-cols-2 gap-4">
+          <PieceTile piece="edges" shortcut="E" onClick={() => selectPiece("edges")} disabled={isPending} />
+          <PieceTile piece="corners" shortcut="C" onClick={() => selectPiece("corners")} disabled={isPending} />
+        </div>
+      )}
+
+      {/* Step: Macro */}
+      {step === "macro" && (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
           {macros.map((m, i) => (
             <Tile
@@ -203,38 +222,32 @@ export default function Tracker({ macros }: { macros: MacroWithSubs[] }) {
               subtitle={m.subs.length > 0 ? `${m.subs.length} Unterkat.` : "direkt"}
               onClick={() => selectMacro(m)}
               disabled={isPending}
+              color="accent"
             />
           ))}
         </div>
-      ) : (
-        <>
-          <button
-            onClick={() => setSelectedMacroId(null)}
-            className="mb-3 text-sm text-muted hover:text-white"
-          >
-            ← zurück zu allen Gründen
-          </button>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
-            {selectedMacro.subs.map((s, i) => (
-              <Tile
-                key={s.id}
-                shortcut={subKeys.effective[i]}
-                title={s.name}
-                onClick={() => selectSub(i)}
-                disabled={isPending}
-                variant="sub"
-              />
-            ))}
-          </div>
-        </>
+      )}
+
+      {/* Step: Sub */}
+      {step === "sub" && (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+          {selectedMacro!.subs.map((s, i) => (
+            <Tile
+              key={s.id}
+              shortcut={subKeys.effective[i]}
+              title={s.name}
+              onClick={() => selectSub(i)}
+              disabled={isPending}
+              color="accent-2"
+            />
+          ))}
+        </div>
       )}
 
       {toast && (
-        <div
-          className={`fixed bottom-6 left-1/2 -translate-x-1/2 rounded-lg px-4 py-2.5 text-sm font-medium shadow-lg ${
-            toast.kind === "ok" ? "bg-accent-2 text-black" : "bg-danger text-white"
-          }`}
-        >
+        <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 rounded-lg px-4 py-2.5 text-sm font-medium shadow-lg ${
+          toast.kind === "ok" ? "bg-accent-2 text-black" : "bg-danger text-white"
+        }`}>
           {toast.text}
         </div>
       )}
@@ -242,39 +255,61 @@ export default function Tracker({ macros }: { macros: MacroWithSubs[] }) {
   );
 }
 
-function Tile({
-  shortcut,
-  title,
-  subtitle,
-  onClick,
-  disabled,
-  variant = "macro",
-}: {
-  shortcut: string | null;
-  title: string;
-  subtitle?: string;
-  onClick: () => void;
-  disabled?: boolean;
-  variant?: "macro" | "sub";
+function PieceBadge(piece: PieceType) {
+  return (
+    <span className={`mr-2 rounded px-2 py-0.5 text-sm font-semibold ${
+      piece === "edges" ? "bg-accent/20 text-accent" : "bg-accent-2/20 text-accent-2"
+    }`}>
+      {PIECE_LABELS[piece]}
+    </span>
+  );
+}
+
+function PieceTile({ piece, shortcut, onClick, disabled }: {
+  piece: PieceType; shortcut: string; onClick: () => void; disabled?: boolean;
 }) {
+  const isEdges = piece === "edges";
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={`relative flex min-h-[120px] flex-col items-center justify-center gap-3 rounded-2xl border-2 transition-all disabled:opacity-60 ${
+        isEdges
+          ? "border-accent/40 bg-accent/5 hover:border-accent hover:bg-accent/10"
+          : "border-accent-2/40 bg-accent-2/5 hover:border-accent-2 hover:bg-accent-2/10"
+      }`}
+    >
+      <kbd className={`absolute right-3 top-3 rounded border px-1.5 py-0.5 text-xs ${
+        isEdges ? "border-accent/40 bg-accent/10 text-accent" : "border-accent-2/40 bg-accent-2/10 text-accent-2"
+      }`}>
+        {shortcut}
+      </kbd>
+      <span className={`text-4xl font-bold ${isEdges ? "text-accent" : "text-accent-2"}`}>
+        {isEdges ? "E" : "C"}
+      </span>
+      <span className="text-lg font-semibold">{PIECE_LABELS[piece]}</span>
+    </button>
+  );
+}
+
+function Tile({ shortcut, title, subtitle, onClick, disabled, color }: {
+  shortcut: string | null; title: string; subtitle?: string;
+  onClick: () => void; disabled?: boolean; color: "accent" | "accent-2";
+}) {
+  const ac = color === "accent";
   return (
     <button
       onClick={onClick}
       disabled={disabled}
       className={`group relative flex min-h-[88px] flex-col justify-between rounded-xl border p-4 text-left transition-all disabled:opacity-60 ${
-        variant === "macro"
-          ? "border-border bg-surface hover:border-accent hover:bg-surface-2"
-          : "border-border bg-surface hover:border-accent-2 hover:bg-surface-2"
+        ac ? "border-border bg-surface hover:border-accent hover:bg-surface-2"
+           : "border-border bg-surface hover:border-accent-2 hover:bg-surface-2"
       }`}
     >
       {shortcut && (
-        <kbd
-          className={`absolute right-2 top-2 rounded border px-1.5 py-0.5 text-xs ${
-            variant === "macro"
-              ? "border-accent/40 bg-accent/10 text-accent"
-              : "border-accent-2/40 bg-accent-2/10 text-accent-2"
-          }`}
-        >
+        <kbd className={`absolute right-2 top-2 rounded border px-1.5 py-0.5 text-xs ${
+          ac ? "border-accent/40 bg-accent/10 text-accent" : "border-accent-2/40 bg-accent-2/10 text-accent-2"
+        }`}>
           {shortcut.toUpperCase()}
         </kbd>
       )}

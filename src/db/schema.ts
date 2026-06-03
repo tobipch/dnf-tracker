@@ -1,4 +1,6 @@
-import { pgTable, serial, text, integer, timestamp, index } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, timestamp, index, pgEnum } from "drizzle-orm/pg-core";
+
+export const pieceTypeEnum = pgEnum("piece_type", ["edges", "corners"]);
 
 export const macroCategories = pgTable("macro_categories", {
   id: serial("id").primaryKey(),
@@ -30,10 +32,10 @@ export const dnfEntries = pgTable(
   "dnf_entries",
   {
     id: serial("id").primaryKey(),
+    pieceType: pieceTypeEnum("piece_type").notNull(),
     macroId: integer("macro_id")
       .notNull()
       .references(() => macroCategories.id, { onDelete: "cascade" }),
-    // Nullable: macro categories without sub categories are booked at macro level.
     subId: integer("sub_id").references(() => subCategories.id, { onDelete: "set null" }),
     occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -46,3 +48,4 @@ export const dnfEntries = pgTable(
 export type MacroCategory = typeof macroCategories.$inferSelect;
 export type SubCategory = typeof subCategories.$inferSelect;
 export type DnfEntry = typeof dnfEntries.$inferSelect;
+export type PieceType = "edges" | "corners";

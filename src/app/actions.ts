@@ -16,7 +16,12 @@ function normalizeShortcut(raw: FormDataEntryValue | null | undefined): string |
 
 /* ----------------------------- DNF recording ----------------------------- */
 
-export async function recordDnf(macroId: number, subId: number | null): Promise<ActionResult> {
+export async function recordDnf(
+  pieceType: "edges" | "corners",
+  macroId: number,
+  subId: number | null
+): Promise<ActionResult> {
+  if (pieceType !== "edges" && pieceType !== "corners") return { ok: false, error: "Ungültiger Piece-Typ." };
   if (!Number.isInteger(macroId)) return { ok: false, error: "Ungültige Makro-Kategorie." };
 
   const subs = await db
@@ -24,7 +29,6 @@ export async function recordDnf(macroId: number, subId: number | null): Promise<
     .from(subCategories)
     .where(eq(subCategories.macroId, macroId));
 
-  // If sub categories exist for this macro, one must be chosen (sub is enforced).
   if (subs.length > 0) {
     if (subId === null) return { ok: false, error: "Bitte eine Unterkategorie auswählen." };
     if (!subs.some((s) => s.id === subId)) return { ok: false, error: "Unterkategorie gehört nicht zu dieser Makro-Kategorie." };
@@ -32,7 +36,7 @@ export async function recordDnf(macroId: number, subId: number | null): Promise<
     subId = null;
   }
 
-  await db.insert(dnfEntries).values({ macroId, subId });
+  await db.insert(dnfEntries).values({ pieceType, macroId, subId });
   revalidatePath("/");
   revalidatePath("/stats");
   return { ok: true };
