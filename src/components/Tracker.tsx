@@ -478,14 +478,13 @@ function PieceTile({ piece, shortcut, onClick, disabled }: {
   const bgIdle      = isEdges ? "bg-accent/[0.04]"    : "bg-accent-2/[0.04]";
   const bgHover     = isEdges ? "hover:bg-accent/[0.09]" : "hover:bg-accent-2/[0.09]";
   const shadowHover = isEdges ? "hover:shadow-neon-blue"  : "hover:shadow-neon-green";
-  const animGlow    = isEdges ? "animate-glow-blue"        : "animate-glow-green";
   const textClass   = isEdges ? "text-gradient"            : "text-gradient-green";
 
   return (
     <button
       onClick={onClick}
       disabled={disabled}
-      className={`group relative flex min-h-[200px] flex-col items-center justify-center gap-2 overflow-hidden rounded-2xl border-2 transition-all duration-300 disabled:opacity-50 ${borderIdle} ${borderHover} ${bgIdle} ${bgHover} ${shadowHover} ${animGlow}`}
+      className={`group relative flex min-h-[200px] flex-col items-center justify-center gap-2 overflow-hidden rounded-2xl border-2 transition-all duration-300 disabled:opacity-50 ${borderIdle} ${borderHover} ${bgIdle} ${bgHover} ${shadowHover}`}
     >
       <span className="pointer-events-none absolute select-none text-[11rem] font-black leading-none opacity-[0.05] transition-opacity duration-300 group-hover:opacity-[0.09]"
         style={{ color: clrHex }}>
