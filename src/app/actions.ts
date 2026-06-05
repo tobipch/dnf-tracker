@@ -55,7 +55,61 @@ export async function undoLastDnf(): Promise<ActionResult> {
   return { ok: true, message: "Letzter DNF entfernt." };
 }
 
-/* --------------------------- Macro categories ---------------------------- */
+export type QuickCreateResult =
+  | { ok: true; id: number }
+  | { ok: false; error: string };
+
+/** Creates a macro category on-the-fly and returns its id. */
+export async function quickCreateMacro(
+  name: string,
+  shortcut: string | null
+): Promise<QuickCreateResult> {
+  const n = name.trim();
+  if (!n) return { ok: false, error: "Name darf nicht leer sein." };
+  const s = shortcut?.trim().toLowerCase().slice(0, 1) || null;
+
+  const max = await db
+    .select({ max: sql<number>`coalesce(max(${macroCategories.position}), -1)` })
+    .from(macroCategories);
+  const position = (max[0]?.max ?? -1) + 1;
+
+  const rows = await db
+    .insert(macroCategories)
+    .values({ name: n, shortcut: s, position })
+    .returning({ id: macroCategories.id });
+
+  revalidatePath("/");
+  revalidatePath("/settings");
+  return { ok: true, id: rows[0].id };
+}
+
+/** Creates a sub category on-the-fly and returns its id. */
+export async function quickCreateSub(
+  macroId: number,
+  name: string,
+  shortcut: string | null
+): Promise<QuickCreateResult> {
+  const n = name.trim();
+  if (!n) return { ok: false, error: "Name darf nicht leer sein." };
+  const s = shortcut?.trim().toLowerCase().slice(0, 1) || null;
+
+  const max = await db
+    .select({ max: sql<number>`coalesce(max(${subCategories.position}), -1)` })
+    .from(subCategories)
+    .where(eq(subCategories.macroId, macroId));
+  const position = (max[0]?.max ?? -1) + 1;
+
+  const rows = await db
+    .insert(subCategories)
+    .values({ macroId, name: n, shortcut: s, position })
+    .returning({ id: subCategories.id });
+
+  revalidatePath("/");
+  revalidatePath("/settings");
+  return { ok: true, id: rows[0].id };
+}
+
+
 
 export async function createMacro(formData: FormData): Promise<ActionResult> {
   const name = (formData.get("name") ?? "").toString().trim();
