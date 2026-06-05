@@ -46,6 +46,13 @@ export default function Tracker({ macros }: { macros: MacroWithSubs[] }) {
   const [addShortcut, setAddShortcut]     = useState("");
   const [addError, setAddError]           = useState<string | null>(null);
   const nameInputRef                      = useRef<HTMLInputElement>(null);
+  // Snapshot of the flow state at the moment the last DNF was booked,
+  // so Ctrl+Z can restore exactly where the user was.
+  const lastBookedState = useRef<{
+    pieceType: PieceType;
+    macroId: number;
+    hadSub: boolean;   // true → user was on the sub step
+  } | null>(null);
 
   const selectedMacro = useMemo(
     () => macros.find((m) => m.id === selectedMacroId) ?? null,
@@ -71,6 +78,7 @@ export default function Tracker({ macros }: { macros: MacroWithSubs[] }) {
       startTransition(async () => {
         const res = await recordDnf(pt, macroId, subId);
         if (res.ok) {
+          lastBookedState.current = { pieceType: pt, macroId, hadSub: subId !== null };
           flash({ kind: "ok", text: `${PIECE_LABELS[pt]}: ${label}` });
           reset();
         } else {
@@ -80,6 +88,40 @@ export default function Tracker({ macros }: { macros: MacroWithSubs[] }) {
     },
     [flash, reset]
   );
+
+  // Ctrl+Z / Cmd+Z: step back through the flow, or undo the last DB entry
+  // and restore the exact step the user was on before submission.
+  const ctrlUndo = useCallback(() => {
+    if (step === "sub") {
+      setStep("macro");
+      setSelectedMacroId(null);
+    } else if (step === "macro") {
+      setStep("piece");
+      setPieceType(null);
+    } else {
+      // step === "piece" → undo last DB entry and restore previous flow state
+      startTransition(async () => {
+        const res = await undoLastDnf();
+        if (res.ok) {
+          const last = lastBookedState.current;
+          if (last) {
+            lastBookedState.current = null;
+            setPieceType(last.pieceType);
+            if (last.hadSub) {
+              setSelectedMacroId(last.macroId);
+              setStep("sub");
+            } else {
+              setSelectedMacroId(null);
+              setStep("macro");
+            }
+          }
+          // Don't flash a toast — navigating back is feedback enough
+        } else {
+          flash({ kind: "err", text: res.error });
+        }
+      });
+    }
+  }, [step, flash]);
 
   const selectPiece = useCallback((pt: PieceType) => {
     setPieceType(pt);
@@ -104,13 +146,6 @@ export default function Tracker({ macros }: { macros: MacroWithSubs[] }) {
     },
     [selectedMacro, pieceType, book]
   );
-
-  const undo = useCallback(() => {
-    startTransition(async () => {
-      const res = await undoLastDnf();
-      flash(res.ok ? { kind: "ok", text: res.message ?? "Rückgängig." } : { kind: "err", text: res.error });
-    });
-  }, [flash]);
 
   // Open the add form (focus name input on next frame)
   const openAddForm = useCallback((mode: "macro" | "sub") => {
@@ -152,13 +187,21 @@ export default function Tracker({ macros }: { macros: MacroWithSubs[] }) {
       const target = e.target as HTMLElement;
       const inInput = target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable;
 
+      // Ctrl+Z / Cmd+Z — always handled, even inside the add form
+      if ((e.ctrlKey || e.metaKey) && e.key === "z") {
+        e.preventDefault();
+        if (addForm.open) closeAddForm();
+        else ctrlUndo();
+        return;
+      }
+
       if (addForm.open) {
         if (e.key === "Escape") { e.preventDefault(); closeAddForm(); }
         if (e.key === "Enter" && !inInput) { e.preventDefault(); submitAddForm(); }
         return; // all other keys go to the form inputs
       }
 
-      if (inInput || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (inInput || e.altKey) return;
       const key = e.key.toLowerCase();
 
       if (key === "escape") {
@@ -167,7 +210,7 @@ export default function Tracker({ macros }: { macros: MacroWithSubs[] }) {
         else if (step === "macro") { setStep("piece"); setPieceType(null); }
         return;
       }
-      if (key === "u") { e.preventDefault(); undo(); return; }
+      if (e.metaKey || e.ctrlKey) return;
       if (key === "n") {
         e.preventDefault();
         if (step === "macro") openAddForm("macro");
@@ -187,7 +230,7 @@ export default function Tracker({ macros }: { macros: MacroWithSubs[] }) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [step, addForm.open, macros, macroKeys, subKeys, selectPiece, selectMacro, selectSub, undo, openAddForm, closeAddForm, submitAddForm]);
+  }, [step, addForm.open, macros, macroKeys, subKeys, selectPiece, selectMacro, selectSub, ctrlUndo, openAddForm, closeAddForm, submitAddForm]);
 
   if (macros.length === 0 && step !== "piece") reset();
 
@@ -236,14 +279,11 @@ export default function Tracker({ macros }: { macros: MacroWithSubs[] }) {
           );
         })}
         <div className="ml-2 flex flex-wrap items-center gap-2 text-xs text-muted">
-          {step !== "piece" && (
-            <><kbd className="rounded border border-border bg-surface-2 px-1.5 py-0.5">Esc</kbd><span>zurück</span></>
-          )}
           {(step === "macro" || step === "sub") && (
             <><kbd className="rounded border border-border bg-surface-2 px-1.5 py-0.5">N</kbd><span>neu</span></>
           )}
-          <kbd className="rounded border border-border bg-surface-2 px-1.5 py-0.5">U</kbd>
-          <span>undo</span>
+          <kbd className="rounded border border-border bg-surface-2 px-1.5 py-0.5">⌃Z</kbd>
+          <span>zurück / undo</span>
         </div>
       </div>
 
