@@ -31,7 +31,7 @@ function buildKeyMap<T extends { shortcut: string | null }>(items: T[]) {
 }
 
 const PIECE_LABELS: Record<PieceType, string> = { edges: "Edges", corners: "Corners" };
-const PIECE_KEYS: Record<string, PieceType> = { e: "edges", c: "corners" };
+const PIECE_KEYS: Record<string, PieceType> = { "1": "edges", "2": "corners" };
 
 type AddFormState = { open: false } | { open: true; mode: "macro" | "sub" };
 
@@ -281,8 +281,8 @@ export default function Tracker({ macros }: { macros: MacroWithSubs[] }) {
       {/* STEP 1: Piece type */}
       {step === "piece" && (
         <div className="grid grid-cols-2 gap-5 animate-slide-up">
-          <PieceTile piece="edges"   shortcut="E" onClick={() => selectPiece("edges")}   disabled={isPending} />
-          <PieceTile piece="corners" shortcut="C" onClick={() => selectPiece("corners")} disabled={isPending} />
+          <PieceTile piece="edges"   shortcut="1" onClick={() => selectPiece("edges")}   disabled={isPending} />
+          <PieceTile piece="corners" shortcut="2" onClick={() => selectPiece("corners")} disabled={isPending} />
         </div>
       )}
 
