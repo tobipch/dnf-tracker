@@ -4,11 +4,12 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "drizzle-kit push && next build",
+    "build": "npm run db:prepare && drizzle-kit push --force && next build",
     "start": "next start",
     "lint": "next lint",
     "db:generate": "drizzle-kit generate",
-    "db:push": "drizzle-kit push",
+    "db:prepare": "node scripts/drop-legacy.mjs",
+    "db:push": "npm run db:prepare && drizzle-kit push",
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
