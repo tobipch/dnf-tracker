@@ -1,492 +1,431 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
-import Link from "next/link";
-import type { MacroWithSubs } from "@/db/queries";
-import { recordDnf, undoLastDnf, quickCreateMacro, quickCreateSub } from "@/app/actions";
+import type { Reason, PieceType, Phase } from "@/db/schema";
+import type { TrackerData } from "@/db/queries";
+import { recordAttempt, undoLastAttempt, createReason } from "@/app/actions";
 
-type PieceType = "edges" | "corners";
-type Step = "piece" | "macro" | "sub";
+type Draft = {
+  key: string;
+  pieceType: PieceType;
+  phase: Phase;
+  reasonId: number | null;
+  reasonName: string;
+  comment: string;
+};
+
 type Toast = { kind: "ok" | "err"; text: string } | null;
 
-function fallbackKey(index: number): string | null {
-  if (index < 9) return String(index + 1);
-  if (index === 9) return "0";
-  return null;
+const PIECE_LABEL: Record<PieceType, string> = { edges: "Edges", corners: "Corners" };
+const PHASE_LABEL: Record<Phase, string> = { memo: "Memo", exec: "Execution" };
+
+/** Tasten, die die Oberfläche selbst belegt und die kein Grund überschreiben darf. */
+const RESERVED_KEYS = new Set(["1", "2", "enter", "escape", " ", "tab", "backspace", "/"]);
+
+const PIECE_STYLE: Record<
+  PieceType,
+  { text: string; border: string; bg: string; ring: string; dot: string }
+> = {
+  edges: {
+    text: "text-accent",
+    border: "border-accent/50",
+    bg: "bg-accent/10",
+    ring: "shadow-neon-blue-sm",
+    dot: "bg-accent",
+  },
+  corners: {
+    text: "text-purple",
+    border: "border-purple/50",
+    bg: "bg-purple/10",
+    ring: "shadow-neon-purple",
+    dot: "bg-purple",
+  },
+};
+
+let draftSeq = 0;
+function nextKey() {
+  draftSeq += 1;
+  return `d${draftSeq}`;
 }
 
-function buildKeyMap<T extends { shortcut: string | null }>(items: T[]) {
-  const used = new Set<string>();
-  items.forEach((it) => { if (it.shortcut) used.add(it.shortcut.toLowerCase()); });
-  const effective: (string | null)[] = items.map((it, i) => {
-    const explicit = it.shortcut?.toLowerCase() ?? null;
-    if (explicit) return explicit;
-    const fb = fallbackKey(i);
-    if (fb && !used.has(fb)) { used.add(fb); return fb; }
-    return null;
-  });
-  const lookup = new Map<string, number>();
-  effective.forEach((k, i) => { if (k && !lookup.has(k)) lookup.set(k, i); });
-  return { effective, lookup };
-}
+export default function Tracker({ data }: { data: TrackerData }) {
+  const [mode, setMode] = useState<"idle" | "dnf">("idle");
+  const [activePiece, setActivePiece] = useState<PieceType>("edges");
+  const [drafts, setDrafts] = useState<Draft[]>([]);
+  const [note, setNote] = useState("");
+  const [toast, setToast] = useState<Toast>(null);
+  const [isPending, startTransition] = useTransition();
+  const [addOpen, setAddOpen] = useState<Phase | null>(null);
+  const [addName, setAddName] = useState("");
+  const [addKey, setAddKey] = useState("");
 
-const PIECE_LABELS: Record<PieceType, string> = { edges: "Edges", corners: "Corners" };
-const PIECE_KEYS: Record<string, PieceType> = { "1": "edges", "2": "corners" };
+  // Optimistische Zähler, damit die Zahlen sofort reagieren.
+  const [pendingSuccess, setPendingSuccess] = useState(0);
+  const [pendingDnf, setPendingDnf] = useState(0);
+  useEffect(() => {
+    setPendingSuccess(0);
+    setPendingDnf(0);
+  }, [data]);
 
-type AddFormState = { open: false } | { open: true; mode: "macro" | "sub" };
+  const commentRefs = useRef<Map<string, HTMLInputElement | null>>(new Map());
+  const addNameRef = useRef<HTMLInputElement>(null);
 
-export default function Tracker({ macros }: { macros: MacroWithSubs[] }) {
-  const [step, setStep]                   = useState<Step>("piece");
-  const [pieceType, setPieceType]         = useState<PieceType | null>(null);
-  const [selectedMacroId, setSelectedMacroId] = useState<number | null>(null);
-  const [toast, setToast]                 = useState<Toast>(null);
-  const [isPending, startTransition]      = useTransition();
-  const [addForm, setAddForm]             = useState<AddFormState>({ open: false });
-  const [addName, setAddName]             = useState("");
-  const [addShortcut, setAddShortcut]     = useState("");
-  const [addError, setAddError]           = useState<string | null>(null);
-  const nameInputRef                      = useRef<HTMLInputElement>(null);
-  // Snapshot of the flow state at the moment the last DNF was booked,
-  // so Ctrl+Z can restore exactly where the user was.
-  const lastBookedState = useRef<{
-    pieceType: PieceType;
-    macroId: number;
-    hadSub: boolean;   // true → user was on the sub step
-  } | null>(null);
-
-  const selectedMacro = useMemo(
-    () => macros.find((m) => m.id === selectedMacroId) ?? null,
-    [macros, selectedMacroId]
+  const allReasons = useMemo(
+    () => [...data.reasons.memo, ...data.reasons.exec],
+    [data.reasons]
   );
 
-  const macroKeys = useMemo(() => buildKeyMap(macros), [macros]);
-  const subKeys   = useMemo(() => buildKeyMap(selectedMacro?.subs ?? []), [selectedMacro]);
+  /** Shortcut → Grund. Reservierte Tasten gewinnen immer gegen einen Grund. */
+  const shortcutMap = useMemo(() => {
+    const map = new Map<string, Reason>();
+    for (const r of allReasons) {
+      const k = r.shortcut?.toLowerCase();
+      if (!k || RESERVED_KEYS.has(k) || map.has(k)) continue;
+      map.set(k, r);
+    }
+    return map;
+  }, [allReasons]);
 
   const flash = useCallback((t: Toast) => {
     setToast(t);
-    if (t) window.setTimeout(() => setToast(null), 2400);
+    if (t) window.setTimeout(() => setToast(null), 2000);
   }, []);
 
-  const reset = useCallback(() => {
-    setStep("piece");
-    setPieceType(null);
-    setSelectedMacroId(null);
-  }, []);
-
-  const book = useCallback(
-    (pt: PieceType, macroId: number, subId: number | null, label: string) => {
-      startTransition(async () => {
-        const res = await recordDnf(pt, macroId, subId);
-        if (res.ok) {
-          lastBookedState.current = { pieceType: pt, macroId, hadSub: subId !== null };
-          flash({ kind: "ok", text: `${PIECE_LABELS[pt]}: ${label}` });
-          reset();
-        } else {
-          flash({ kind: "err", text: res.error });
-        }
-      });
-    },
-    [flash, reset]
-  );
-
-  // Ctrl+Z / Cmd+Z: step back through the flow, or undo the last DB entry
-  // and restore the exact step the user was on before submission.
-  const ctrlUndo = useCallback(() => {
-    if (step === "sub") {
-      setStep("macro");
-      setSelectedMacroId(null);
-    } else if (step === "macro") {
-      setStep("piece");
-      setPieceType(null);
-    } else {
-      // step === "piece" → undo last DB entry and restore previous flow state
-      startTransition(async () => {
-        const res = await undoLastDnf();
-        if (res.ok) {
-          const last = lastBookedState.current;
-          if (last) {
-            lastBookedState.current = null;
-            setPieceType(last.pieceType);
-            if (last.hadSub) {
-              setSelectedMacroId(last.macroId);
-              setStep("sub");
-            } else {
-              setSelectedMacroId(null);
-              setStep("macro");
-            }
-          }
-          // Don't flash a toast — navigating back is feedback enough
-        } else {
-          flash({ kind: "err", text: res.error });
-        }
-      });
-    }
-  }, [step, flash]);
-
-  const selectPiece = useCallback((pt: PieceType) => {
-    setPieceType(pt);
-    setStep("macro");
-  }, []);
-
-  const selectMacro = useCallback(
-    (macro: MacroWithSubs) => {
-      if (!pieceType) return;
-      if (macro.subs.length === 0) book(pieceType, macro.id, null, macro.name);
-      else { setSelectedMacroId(macro.id); setStep("sub"); }
-    },
-    [pieceType, book]
-  );
-
-  const selectSub = useCallback(
-    (subIndex: number) => {
-      if (!selectedMacro || !pieceType) return;
-      const sub = selectedMacro.subs[subIndex];
-      if (!sub) return;
-      book(pieceType, selectedMacro.id, sub.id, `${selectedMacro.name} → ${sub.name}`);
-    },
-    [selectedMacro, pieceType, book]
-  );
-
-  // Open the add form (focus name input on next frame)
-  const openAddForm = useCallback((mode: "macro" | "sub") => {
+  const resetPanel = useCallback(() => {
+    setDrafts([]);
+    setNote("");
+    setAddOpen(null);
     setAddName("");
-    setAddShortcut("");
-    setAddError(null);
-    setAddForm({ open: true, mode });
-    window.setTimeout(() => nameInputRef.current?.focus(), 30);
+    setAddKey("");
+    setMode("idle");
   }, []);
 
-  const closeAddForm = useCallback(() => {
-    setAddForm({ open: false });
-    setAddError(null);
-  }, []);
+  /* ------------------------------ Speichern ------------------------------ */
 
-  const submitAddForm = useCallback(() => {
-    if (!addForm.open || !pieceType) return;
-    const mode = addForm.mode;
+  const saveSuccess = useCallback(() => {
+    setPendingSuccess((n) => n + 1);
     startTransition(async () => {
-      if (mode === "macro") {
-        const res = await quickCreateMacro(addName, addShortcut || null);
-        if (!res.ok) { setAddError(res.error); return; }
-        closeAddForm();
-        // A macro just created has no subs → book immediately
-        book(pieceType, res.id, null, addName.trim());
+      const res = await recordAttempt({ isDnf: false });
+      if (!res.ok) {
+        setPendingSuccess((n) => Math.max(0, n - 1));
+        flash({ kind: "err", text: res.error });
       } else {
-        if (!selectedMacroId) return;
-        const res = await quickCreateSub(selectedMacroId, addName, addShortcut || null);
-        if (!res.ok) { setAddError(res.error); return; }
-        closeAddForm();
-        book(pieceType, selectedMacroId, res.id, `${selectedMacro?.name} → ${addName.trim()}`);
+        flash({ kind: "ok", text: "Success ✓" });
       }
     });
-  }, [addForm, addName, addShortcut, pieceType, selectedMacroId, selectedMacro, book, closeAddForm]);
+  }, [flash]);
 
-  // Global keyboard handler
+  const saveDnf = useCallback(
+    (list: Draft[], attemptNote: string) => {
+      setPendingDnf((n) => n + 1);
+      resetPanel();
+      startTransition(async () => {
+        const res = await recordAttempt({
+          isDnf: true,
+          note: attemptNote,
+          errors: list.map((d) => ({
+            pieceType: d.pieceType,
+            phase: d.phase,
+            reasonId: d.reasonId,
+            comment: d.comment,
+          })),
+        });
+        if (!res.ok) {
+          setPendingDnf((n) => Math.max(0, n - 1));
+          flash({ kind: "err", text: res.error });
+        } else {
+          flash({
+            kind: "ok",
+            text: list.length > 0 ? `DNF · ${list.length} Fehler erfasst` : "DNF ohne Grund erfasst",
+          });
+        }
+      });
+    },
+    [flash, resetPanel]
+  );
+
+  const undo = useCallback(() => {
+    startTransition(async () => {
+      const res = await undoLastAttempt();
+      flash(res.ok ? { kind: "ok", text: res.message ?? "Rückgängig." } : { kind: "err", text: res.error });
+    });
+  }, [flash]);
+
+  /* -------------------------- Fehler-Bausteine --------------------------- */
+
+  const addDraft = useCallback((reason: Reason, piece: PieceType) => {
+    setDrafts((prev) => [
+      ...prev,
+      {
+        key: nextKey(),
+        pieceType: piece,
+        phase: reason.phase as Phase,
+        reasonId: reason.id,
+        reasonName: reason.name,
+        comment: "",
+      },
+    ]);
+  }, []);
+
+  const removeDraft = useCallback((key: string) => {
+    setDrafts((prev) => prev.filter((d) => d.key !== key));
+  }, []);
+
+  const setComment = useCallback((key: string, value: string) => {
+    setDrafts((prev) => prev.map((d) => (d.key === key ? { ...d, comment: value } : d)));
+  }, []);
+
+  const focusLastComment = useCallback(() => {
+    const last = drafts[drafts.length - 1];
+    if (last) window.setTimeout(() => commentRefs.current.get(last.key)?.focus(), 0);
+  }, [drafts]);
+
+  const quickCreate = useCallback(
+    (phase: Phase) => {
+      const name = addName.trim();
+      if (!name) return;
+      startTransition(async () => {
+        const res = await createReason(phase, name, addKey.trim() || null);
+        if (!res.ok) {
+          flash({ kind: "err", text: res.error });
+          return;
+        }
+        addDraft(res.reason, activePiece);
+        setAddName("");
+        setAddKey("");
+        setAddOpen(null);
+        flash({ kind: "ok", text: `„${res.reason.name}“ angelegt` });
+      });
+    },
+    [addName, addKey, activePiece, addDraft, flash]
+  );
+
+  /* ------------------------------ Tastatur ------------------------------- */
+
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement;
-      const inInput = target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable;
+    function onKey(e: KeyboardEvent) {
+      const target = e.target as HTMLElement | null;
+      const inField =
+        target &&
+        (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
 
-      // Ctrl+Z / Cmd+Z — always handled, even inside the add form
-      if ((e.ctrlKey || e.metaKey) && e.key === "z") {
+      // Rückgängig funktioniert überall.
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
         e.preventDefault();
-        if (addForm.open) closeAddForm();
-        else ctrlUndo();
+        undo();
         return;
       }
 
-      if (addForm.open) {
-        if (e.key === "Escape") { e.preventDefault(); closeAddForm(); }
-        if (e.key === "Enter" && !inInput) { e.preventDefault(); submitAddForm(); }
-        return; // all other keys go to the form inputs
+      if (inField) {
+        if (e.key === "Escape") (target as HTMLElement).blur();
+        return;
       }
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
 
-      if (inInput || e.altKey) return;
       const key = e.key.toLowerCase();
 
-      if (key === "escape") {
-        e.preventDefault();
-        if (step === "sub") { setStep("macro"); setSelectedMacroId(null); }
-        else if (step === "macro") { setStep("piece"); setPieceType(null); }
+      if (mode === "idle") {
+        if (e.key === " " || key === "s") {
+          e.preventDefault();
+          saveSuccess();
+          return;
+        }
+        if (key === "d" || key === "f") {
+          e.preventDefault();
+          setMode("dnf");
+          return;
+        }
         return;
       }
-      if (e.metaKey || e.ctrlKey) return;
-      if (key === "n") {
+
+      // --- DNF-Panel ---
+      if (e.key === "Escape") {
         e.preventDefault();
-        if (step === "macro") openAddForm("macro");
-        else if (step === "sub") openAddForm("sub");
+        resetPanel();
         return;
       }
-      if (step === "piece") {
-        const pt = PIECE_KEYS[key];
-        if (pt) { e.preventDefault(); selectPiece(pt); }
-      } else if (step === "macro") {
-        const idx = macroKeys.lookup.get(key);
-        if (idx !== undefined && macros[idx]) { e.preventDefault(); selectMacro(macros[idx]); }
-      } else if (step === "sub") {
-        const idx = subKeys.lookup.get(key);
-        if (idx !== undefined) { e.preventDefault(); selectSub(idx); }
+      if (e.key === "Enter") {
+        e.preventDefault();
+        saveDnf(drafts, note);
+        return;
       }
-    };
+      if (key === "1" || (key === "e" && !shortcutMap.has("e"))) {
+        e.preventDefault();
+        setActivePiece("edges");
+        return;
+      }
+      if (key === "2" || (key === "c" && !shortcutMap.has("c"))) {
+        e.preventDefault();
+        setActivePiece("corners");
+        return;
+      }
+      if (e.key === "Tab") {
+        e.preventDefault();
+        setActivePiece((p) => (p === "edges" ? "corners" : "edges"));
+        return;
+      }
+      if (key === "/") {
+        e.preventDefault();
+        focusLastComment();
+        return;
+      }
+      if (e.key === "Backspace") {
+        e.preventDefault();
+        setDrafts((prev) => prev.slice(0, -1));
+        return;
+      }
+
+      const reason = shortcutMap.get(key);
+      if (reason) {
+        e.preventDefault();
+        addDraft(reason, activePiece);
+      }
+    }
+
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [step, addForm.open, macros, macroKeys, subKeys, selectPiece, selectMacro, selectSub, ctrlUndo, openAddForm, closeAddForm, submitAddForm]);
+  }, [
+    mode,
+    drafts,
+    note,
+    activePiece,
+    shortcutMap,
+    saveSuccess,
+    saveDnf,
+    resetPanel,
+    undo,
+    addDraft,
+    focusLastComment,
+  ]);
 
-  if (macros.length === 0 && step !== "piece") reset();
+  useEffect(() => {
+    if (addOpen) window.setTimeout(() => addNameRef.current?.focus(), 0);
+  }, [addOpen]);
 
-  if (macros.length === 0) {
-    return (
-      <div className="rounded-2xl border border-border/60 bg-surface/60 p-10 text-center backdrop-blur">
-        <div className="text-gradient mb-3 text-5xl font-black">DNF?</div>
-        <h1 className="text-xl font-bold">Noch keine Kategorien</h1>
-        <p className="mt-2 text-muted">
-          Lege deine Fehlergründe an — oder drücke{" "}
-          <kbd className="rounded border border-accent/30 bg-accent/10 px-1.5 text-accent">E</kbd>{" "}
-          oder{" "}
-          <kbd className="rounded border border-accent-2/30 bg-accent-2/10 px-1.5 text-accent-2">C</kbd>{" "}
-          und dann{" "}
-          <kbd className="rounded border border-border bg-surface-2 px-1.5">N</kbd>{" "}
-          um direkt loszulegen.
-        </p>
-        <Link
-          href="/settings"
-          className="mt-6 inline-block rounded-xl border border-accent/40 bg-accent/10 px-6 py-2.5 font-semibold text-accent transition-all hover:bg-accent/20"
-          style={{ boxShadow: "0 0 16px rgba(0,212,255,0.2)" }}
-        >
-          Kategorien anlegen →
-        </Link>
-      </div>
-    );
-  }
+  /* ------------------------------ Ableitungen ---------------------------- */
 
-  const isEdges = pieceType === "edges";
+  const totalAttempts = data.totals.attempts + pendingSuccess + pendingDnf;
+  const todayAttempts = data.today.attempts + pendingSuccess + pendingDnf;
+  const goalDone = data.goal.done + pendingSuccess + pendingDnf;
+  const goalPercent = data.goal.target > 0 ? Math.min(100, (goalDone / data.goal.target) * 100) : 0;
+  const successCount = data.totals.success + pendingSuccess;
+  const successRate = totalAttempts > 0 ? Math.round((successCount / totalAttempts) * 1000) / 10 : 0;
+
+  const draftCountFor = useCallback(
+    (piece: PieceType, reasonId: number) =>
+      drafts.filter((d) => d.pieceType === piece && d.reasonId === reasonId).length,
+    [drafts]
+  );
 
   return (
-    <div className="relative animate-fade-in">
+    <div className="space-y-5">
+      <GoalBar
+        done={goalDone}
+        target={data.goal.target}
+        percent={goalPercent}
+        daysLeft={data.goal.daysLeft}
+        perDayNeeded={Math.max(0, Math.ceil(Math.max(0, data.goal.target - goalDone) / Math.max(1, data.goal.daysLeft)))}
+        expected={data.goal.expectedByNow}
+        todayAttempts={todayAttempts}
+      />
 
-      {/* Step indicator */}
-      <div className="mb-6 flex items-center gap-2">
-        {(["piece","macro","sub"] as Step[]).map((s, i) => {
-          const done   = ["piece","macro","sub"].indexOf(step) > i;
-          const active = step === s;
-          return (
-            <div key={s} className="flex items-center gap-2">
-              <div className={`h-1.5 rounded-full transition-all duration-300 ${
-                active ? "w-8 bg-accent shadow-neon-blue-sm" :
-                done   ? "w-3 bg-accent/40" : "w-3 bg-border"
-              }`} />
-            </div>
-          );
-        })}
-        <div className="ml-2 flex flex-wrap items-center gap-2 text-xs text-muted">
-          {(step === "macro" || step === "sub") && (
-            <><kbd className="rounded border border-border bg-surface-2 px-1.5 py-0.5">N</kbd><span>neu</span></>
-          )}
-          <kbd className="rounded border border-border bg-surface-2 px-1.5 py-0.5">⌃Z</kbd>
-          <span>zurück / undo</span>
-        </div>
-      </div>
+      {mode === "idle" ? (
+        <IdleScreen
+          onSuccess={saveSuccess}
+          onDnf={() => setMode("dnf")}
+          successRate={successRate}
+          totalAttempts={totalAttempts}
+          successCount={successCount}
+          dnfCount={data.totals.dnf + pendingDnf}
+          recent={data.recent}
+          onUndo={undo}
+          busy={isPending}
+        />
+      ) : (
+        <div className="space-y-4 animate-slide-up">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-black tracking-tight">
+              <span className="text-danger">DNF</span>{" "}
+              <span className="text-muted font-medium">– was ist passiert?</span>
+            </h2>
+            <button
+              onClick={resetPanel}
+              className="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold text-muted hover:text-white"
+            >
+              Abbrechen <kbd className="ml-1 opacity-70">Esc</kbd>
+            </button>
+          </div>
 
-      {/* Headline */}
-      <div className="mb-6">
-        {step === "piece" && (
-          <>
-            <h1 className="text-3xl font-black tracking-tight">
-              DNF <span className="text-gradient">erfassen</span>
-            </h1>
-            <p className="mt-1 text-sm text-muted">Wo ist der Fehler passiert?</p>
-          </>
-        )}
-        {step === "macro" && (
-          <>
-            <div className="mb-1 flex items-center gap-2">
-              <PiecePill piece={pieceType!} /><span className="text-muted">→</span>
-            </div>
-            <h1 className="text-2xl font-black tracking-tight">Welcher Fehler?</h1>
-          </>
-        )}
-        {step === "sub" && (
-          <>
-            <div className="mb-1 flex items-center gap-2">
-              <PiecePill piece={pieceType!} />
-              <span className="text-muted">→</span>
-              <span className="font-semibold text-white">{selectedMacro?.name}</span>
-              <span className="text-muted">→</span>
-            </div>
-            <h1 className="text-2xl font-black tracking-tight">Genauer?</h1>
-          </>
-        )}
-      </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            {(["edges", "corners"] as PieceType[]).map((piece) => (
+              <PieceColumn
+                key={piece}
+                piece={piece}
+                active={activePiece === piece}
+                onActivate={() => setActivePiece(piece)}
+                reasons={data.reasons}
+                shortcutMap={shortcutMap}
+                onPick={(reason) => {
+                  setActivePiece(piece);
+                  addDraft(reason, piece);
+                }}
+                countFor={(reasonId) => draftCountFor(piece, reasonId)}
+                addOpen={activePiece === piece ? addOpen : null}
+                onToggleAdd={(phase) => {
+                  setActivePiece(piece);
+                  setAddOpen((cur) => (cur === phase ? null : phase));
+                }}
+                addName={addName}
+                setAddName={setAddName}
+                addKey={addKey}
+                setAddKey={setAddKey}
+                onQuickCreate={quickCreate}
+                addNameRef={addNameRef}
+              />
+            ))}
+          </div>
 
-      {/* STEP 1: Piece type */}
-      {step === "piece" && (
-        <div className="grid grid-cols-2 gap-5 animate-slide-up">
-          <PieceTile piece="edges"   shortcut="1" onClick={() => selectPiece("edges")}   disabled={isPending} />
-          <PieceTile piece="corners" shortcut="2" onClick={() => selectPiece("corners")} disabled={isPending} />
-        </div>
-      )}
-
-      {/* STEP 2: Macro */}
-      {step === "macro" && (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 animate-slide-up">
-          {macros.map((m, i) => (
-            <CategoryTile
-              key={m.id}
-              shortcut={macroKeys.effective[i]}
-              title={m.name}
-              subtitle={m.subs.length > 0 ? `${m.subs.length} Sub` : undefined}
-              onClick={() => selectMacro(m)}
-              disabled={isPending}
-              piece={pieceType!}
-            />
-          ))}
-          <AddTile
-            piece={pieceType!}
-            label="Neuer Grund"
-            onClick={() => openAddForm("macro")}
-            disabled={isPending}
+          <DraftList
+            drafts={drafts}
+            onRemove={removeDraft}
+            onComment={setComment}
+            commentRefs={commentRefs}
           />
-        </div>
-      )}
 
-      {/* STEP 3: Sub */}
-      {step === "sub" && (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 animate-slide-up">
-          {selectedMacro!.subs.map((s, i) => (
-            <CategoryTile
-              key={s.id}
-              shortcut={subKeys.effective[i]}
-              title={s.name}
-              onClick={() => selectSub(i)}
-              disabled={isPending}
-              piece={pieceType!}
+          <div className="rounded-xl border border-border bg-surface p-3">
+            <input
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="Notiz zum Solve (optional)"
+              className="w-full bg-transparent text-sm outline-none placeholder:text-muted/70"
             />
-          ))}
-          <AddTile
-            piece={pieceType!}
-            label="Neue Unterkategorie"
-            onClick={() => openAddForm("sub")}
-            disabled={isPending}
-          />
-        </div>
-      )}
+          </div>
 
-      {/* Add form modal */}
-      {addForm.open && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          onClick={(e) => { if (e.target === e.currentTarget) closeAddForm(); }}
-        >
-          {/* Backdrop */}
-          <div className="absolute inset-0 bg-bg/80 backdrop-blur-sm" />
-
-          {/* Modal */}
-          <div
-            className={`relative w-full max-w-sm rounded-2xl border bg-surface p-6 animate-slide-up ${
-              isEdges ? "border-accent/40" : "border-accent-2/40"
-            }`}
-            style={{
-              boxShadow: isEdges
-                ? "0 0 30px rgba(0,212,255,0.15), 0 20px 60px rgba(0,0,0,0.6)"
-                : "0 0 30px rgba(0,255,148,0.15), 0 20px 60px rgba(0,0,0,0.6)",
-            }}
-          >
-            <div className="mb-5 flex items-start justify-between">
-              <div>
-                <div className="flex items-center gap-2 mb-1">
-                  <PiecePill piece={pieceType!} />
-                </div>
-                <h2 className="text-lg font-black">
-                  {addForm.mode === "macro" ? "Neuer Grund" : `Neue Unterkategorie`}
-                  {addForm.mode === "sub" && (
-                    <span className="ml-2 text-sm font-medium text-muted">
-                      für {selectedMacro?.name}
-                    </span>
-                  )}
-                </h2>
-              </div>
-              <button
-                onClick={closeAddForm}
-                className="text-muted hover:text-white transition-colors text-lg leading-none"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="space-y-3">
-              <div>
-                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted">
-                  Name
-                </label>
-                <input
-                  ref={nameInputRef}
-                  value={addName}
-                  onChange={(e) => setAddName(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); submitAddForm(); } }}
-                  placeholder="z.B. Letter pair vergessen"
-                  className={`w-full rounded-xl border bg-bg px-3.5 py-2.5 text-sm outline-none transition-all ${
-                    isEdges
-                      ? "border-border focus:border-accent/60 focus:shadow-neon-blue-sm"
-                      : "border-border focus:border-accent-2/60 focus:shadow-neon-green-sm"
-                  }`}
-                />
-              </div>
-
-              <div>
-                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted">
-                  Shortcut <span className="normal-case font-normal">(optional, 1 Taste)</span>
-                </label>
-                <input
-                  value={addShortcut}
-                  onChange={(e) => setAddShortcut(e.target.value.slice(-1))}
-                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); submitAddForm(); } }}
-                  placeholder="z.B. m"
-                  maxLength={1}
-                  className={`w-20 rounded-xl border bg-bg px-3.5 py-2.5 text-center font-mono text-sm outline-none transition-all ${
-                    isEdges
-                      ? "border-border focus:border-accent/60 focus:shadow-neon-blue-sm"
-                      : "border-border focus:border-accent-2/60 focus:shadow-neon-green-sm"
-                  }`}
-                />
-              </div>
-
-              {addError && (
-                <p className="text-xs text-danger">{addError}</p>
-              )}
-            </div>
-
-            <div className="mt-5 flex gap-2">
-              <button
-                onClick={submitAddForm}
-                disabled={isPending || !addName.trim()}
-                className={`flex-1 rounded-xl border py-2.5 text-sm font-bold transition-all disabled:opacity-40 ${
-                  isEdges
-                    ? "border-accent/40 bg-accent/15 text-accent hover:bg-accent/25 hover:shadow-neon-blue-sm"
-                    : "border-accent-2/40 bg-accent-2/15 text-accent-2 hover:bg-accent-2/25 hover:shadow-neon-green-sm"
-                }`}
-              >
-                {isPending ? "Speichern…" : "Erstellen & buchen"}
-              </button>
-              <button
-                onClick={closeAddForm}
-                className="rounded-xl border border-border bg-surface-2 px-4 py-2.5 text-sm text-muted hover:text-white transition-colors"
-              >
-                Abbrechen
-              </button>
-            </div>
+          <div className="sticky bottom-3 z-10">
+            <button
+              onClick={() => saveDnf(drafts, note)}
+              disabled={isPending}
+              className="w-full rounded-2xl border border-danger/60 bg-danger/15 py-4 text-base font-black tracking-wide text-danger shadow-[0_0_20px_rgba(255,45,120,0.25)] transition hover:bg-danger/25 disabled:opacity-60"
+            >
+              DNF speichern
+              {drafts.length > 0 && <span className="ml-2 opacity-80">· {drafts.length} Fehler</span>}
+              <kbd className="ml-2 text-xs opacity-70">Enter</kbd>
+            </button>
+            <p className="mt-2 text-center text-[11px] text-muted">
+              <kbd>1</kbd>/<kbd>2</kbd> Edges/Corners · Buchstabe = Grund · <kbd>/</kbd> Kommentar ·{" "}
+              <kbd>⌫</kbd> letzten Fehler löschen · Enter ohne Auswahl = DNF ohne Grund
+            </p>
           </div>
         </div>
       )}
 
-      {/* Toast */}
       {toast && (
         <div
-          className={`fixed bottom-6 left-1/2 z-40 -translate-x-1/2 animate-slide-up rounded-xl px-5 py-3 text-sm font-bold tracking-wide ${
+          className={`fixed bottom-5 left-1/2 z-50 -translate-x-1/2 rounded-xl border px-4 py-2.5 text-sm font-semibold shadow-lg backdrop-blur animate-fade-in ${
             toast.kind === "ok"
-              ? "border border-accent-2/40 bg-accent-2/15 text-accent-2"
-              : "border border-danger/40 bg-danger/15 text-danger"
+              ? "border-accent-2/50 bg-accent-2/15 text-accent-2"
+              : "border-danger/50 bg-danger/15 text-danger"
           }`}
-          style={{ boxShadow: toast.kind === "ok" ? "0 0 20px rgba(0,255,148,0.2)" : "0 0 20px rgba(255,45,120,0.2)" }}
         >
           {toast.text}
         </div>
@@ -495,99 +434,407 @@ export default function Tracker({ macros }: { macros: MacroWithSubs[] }) {
   );
 }
 
-function PiecePill({ piece }: { piece: PieceType }) {
-  const isEdges = piece === "edges";
+/* ------------------------------- Zielleiste ------------------------------- */
+
+function GoalBar({
+  done,
+  target,
+  percent,
+  daysLeft,
+  perDayNeeded,
+  expected,
+  todayAttempts,
+}: {
+  done: number;
+  target: number;
+  percent: number;
+  daysLeft: number;
+  perDayNeeded: number;
+  expected: number;
+  todayAttempts: number;
+}) {
+  const ahead = done >= expected;
   return (
-    <span className={`rounded-lg border px-2.5 py-0.5 text-xs font-bold tracking-widest uppercase ${
-      isEdges
-        ? "border-accent/40 bg-accent/10 text-accent"
-        : "border-accent-2/40 bg-accent-2/10 text-accent-2"
-    }`}>
-      {PIECE_LABELS[piece]}
-    </span>
+    <div className="rounded-2xl border border-border bg-surface/70 p-4">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <div className="flex items-baseline gap-2">
+          <span className="text-gradient text-3xl font-black tabular-nums">{done}</span>
+          <span className="text-lg font-bold text-muted">/ {target}</span>
+          <span className="text-xs font-medium uppercase tracking-widest text-muted">Attempts</span>
+        </div>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs font-medium text-muted">
+          <span>
+            Heute <span className="font-bold text-white tabular-nums">{todayAttempts}</span>
+          </span>
+          <span>
+            Noch <span className="font-bold text-white tabular-nums">{daysLeft}</span> Tage
+          </span>
+          <span>
+            Nötig <span className="font-bold text-white tabular-nums">{perDayNeeded}</span>/Tag
+          </span>
+          <span className={ahead ? "text-accent-2" : "text-yellow"}>
+            {ahead ? "▲" : "▼"} {Math.abs(done - expected)} vs. Plan
+          </span>
+        </div>
+      </div>
+      <div className="mt-3 h-2 overflow-hidden rounded-full bg-surface-2">
+        <div
+          className="h-full rounded-full bg-gradient-to-r from-accent to-purple transition-all duration-500"
+          style={{ width: `${percent}%` }}
+        />
+      </div>
+    </div>
   );
 }
 
-function PieceTile({ piece, shortcut, onClick, disabled }: {
-  piece: PieceType; shortcut: string; onClick: () => void; disabled?: boolean;
-}) {
-  const isEdges = piece === "edges";
-  const clrHex      = isEdges ? "#00d4ff" : "#00ff94";
-  const borderIdle  = isEdges ? "border-accent/25"   : "border-accent-2/25";
-  const borderHover = isEdges ? "hover:border-accent" : "hover:border-accent-2";
-  const bgIdle      = isEdges ? "bg-accent/[0.04]"    : "bg-accent-2/[0.04]";
-  const bgHover     = isEdges ? "hover:bg-accent/[0.09]" : "hover:bg-accent-2/[0.09]";
-  const shadowHover = isEdges ? "hover:shadow-neon-blue"  : "hover:shadow-neon-green";
-  const textClass   = isEdges ? "text-gradient"            : "text-gradient-green";
+/* ------------------------------ Startbildschirm --------------------------- */
 
+function IdleScreen({
+  onSuccess,
+  onDnf,
+  successRate,
+  totalAttempts,
+  successCount,
+  dnfCount,
+  recent,
+  onUndo,
+  busy,
+}: {
+  onSuccess: () => void;
+  onDnf: () => void;
+  successRate: number;
+  totalAttempts: number;
+  successCount: number;
+  dnfCount: number;
+  recent: TrackerData["recent"];
+  onUndo: () => void;
+  busy: boolean;
+}) {
   return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      className={`group relative flex min-h-[200px] flex-col items-center justify-center gap-2 overflow-hidden rounded-2xl border-2 transition-all duration-300 disabled:opacity-50 ${borderIdle} ${borderHover} ${bgIdle} ${bgHover} ${shadowHover}`}
-    >
-      <span className="pointer-events-none absolute select-none text-[11rem] font-black leading-none opacity-[0.05] transition-opacity duration-300 group-hover:opacity-[0.09]"
-        style={{ color: clrHex }}>
-        {isEdges ? "E" : "C"}
-      </span>
-      <kbd className={`absolute right-3 top-3 rounded-lg border px-2 py-0.5 text-xs font-mono font-bold ${
-        isEdges ? "border-accent/35 bg-accent/10 text-accent" : "border-accent-2/35 bg-accent-2/10 text-accent-2"
-      }`}>{shortcut}</kbd>
-      <span className={`relative text-5xl font-black tracking-tight ${textClass}`}>
-        {isEdges ? "E" : "C"}
-      </span>
-      <span className={`relative text-sm font-bold tracking-[0.25em] uppercase ${
-        isEdges ? "text-accent" : "text-accent-2"
-      }`}>{PIECE_LABELS[piece]}</span>
-    </button>
+    <div className="space-y-4">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <button
+          onClick={onSuccess}
+          disabled={busy}
+          className="group rounded-3xl border-2 border-accent-2/50 bg-accent-2/10 py-14 transition active:scale-[0.98] hover:border-accent-2 hover:bg-accent-2/20 hover:shadow-neon-green disabled:opacity-60"
+        >
+          <div className="text-4xl font-black tracking-tight text-accent-2">SUCCESS</div>
+          <div className="mt-2 text-xs font-semibold uppercase tracking-widest text-accent-2/70">
+            Leertaste
+          </div>
+        </button>
+        <button
+          onClick={onDnf}
+          disabled={busy}
+          className="group rounded-3xl border-2 border-danger/50 bg-danger/10 py-14 transition active:scale-[0.98] hover:border-danger hover:bg-danger/20 hover:shadow-[0_0_20px_rgba(255,45,120,0.45)] disabled:opacity-60"
+        >
+          <div className="text-4xl font-black tracking-tight text-danger">DNF</div>
+          <div className="mt-2 text-xs font-semibold uppercase tracking-widest text-danger/70">
+            Taste D
+          </div>
+        </button>
+      </div>
+
+      <div className="grid grid-cols-3 gap-3">
+        <Stat label="Success-Rate" value={`${successRate}%`} accent="text-accent-2" />
+        <Stat label="Success" value={successCount} accent="text-white" />
+        <Stat label="DNF" value={dnfCount} accent="text-danger" />
+      </div>
+
+      <div className="rounded-2xl border border-border bg-surface p-4">
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="text-xs font-bold uppercase tracking-widest text-muted">Letzte Versuche</h3>
+          <button
+            onClick={onUndo}
+            disabled={busy || recent.length === 0}
+            className="rounded-lg border border-border px-2.5 py-1 text-xs font-semibold text-muted transition hover:text-white disabled:opacity-40"
+          >
+            Rückgängig <kbd className="ml-1 opacity-70">Ctrl+Z</kbd>
+          </button>
+        </div>
+
+        {recent.length === 0 ? (
+          <p className="text-sm text-muted">
+            Noch keine Versuche. Leertaste für Success, <kbd>D</kbd> für DNF.
+          </p>
+        ) : (
+          <ul className="space-y-1.5">
+            {recent.slice(0, 6).map((a) => (
+              <li key={a.id} className="flex items-start gap-2 text-sm">
+                <span
+                  className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${
+                    a.isDnf ? "bg-danger" : "bg-accent-2"
+                  }`}
+                />
+                <span className="flex-1 leading-snug">
+                  {a.isDnf ? (
+                    a.errors.length > 0 ? (
+                      <span className="flex flex-wrap gap-1.5">
+                        {a.errors.map((e, i) => (
+                          <span
+                            key={i}
+                            className={`rounded-md border px-1.5 py-0.5 text-[11px] font-medium ${PIECE_STYLE[e.pieceType].border} ${PIECE_STYLE[e.pieceType].bg} ${PIECE_STYLE[e.pieceType].text}`}
+                          >
+                            {PIECE_LABEL[e.pieceType].slice(0, 1)} · {PHASE_LABEL[e.phase].slice(0, 4)} ·{" "}
+                            {e.reasonName}
+                            {e.comment ? <span className="opacity-70"> „{e.comment}“</span> : null}
+                          </span>
+                        ))}
+                      </span>
+                    ) : (
+                      <span className="text-muted">DNF ohne Grund</span>
+                    )
+                  ) : (
+                    <span className="text-accent-2/80">Success</span>
+                  )}
+                </span>
+                <time className="shrink-0 text-[11px] tabular-nums text-muted">
+                  {new Date(a.occurredAt).toLocaleTimeString("de-CH", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </time>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
   );
 }
 
-function CategoryTile({ shortcut, title, subtitle, onClick, disabled, piece }: {
-  shortcut: string | null; title: string; subtitle?: string;
-  onClick: () => void; disabled?: boolean; piece: PieceType;
-}) {
-  const isEdges = piece === "edges";
+function Stat({ label, value, accent }: { label: string; value: string | number; accent: string }) {
   return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      className={`group relative flex min-h-[90px] flex-col justify-between rounded-xl border bg-surface p-4 text-left transition-all duration-200 disabled:opacity-60 ${
-        isEdges
-          ? "border-border hover:border-accent/70 hover:bg-accent/5 hover:shadow-neon-blue-sm"
-          : "border-border hover:border-accent-2/70 hover:bg-accent-2/5 hover:shadow-neon-green-sm"
+    <div className="rounded-xl border border-border bg-surface p-3 text-center">
+      <div className={`text-xl font-black tabular-nums ${accent}`}>{value}</div>
+      <div className="mt-0.5 text-[10px] font-bold uppercase tracking-widest text-muted">{label}</div>
+    </div>
+  );
+}
+
+/* ------------------------------ Grund-Spalte ------------------------------ */
+
+function PieceColumn({
+  piece,
+  active,
+  onActivate,
+  reasons,
+  shortcutMap,
+  onPick,
+  countFor,
+  addOpen,
+  onToggleAdd,
+  addName,
+  setAddName,
+  addKey,
+  setAddKey,
+  onQuickCreate,
+  addNameRef,
+}: {
+  piece: PieceType;
+  active: boolean;
+  onActivate: () => void;
+  reasons: { memo: Reason[]; exec: Reason[] };
+  shortcutMap: Map<string, Reason>;
+  onPick: (r: Reason) => void;
+  countFor: (reasonId: number) => number;
+  addOpen: Phase | null;
+  onToggleAdd: (phase: Phase) => void;
+  addName: string;
+  setAddName: (v: string) => void;
+  addKey: string;
+  setAddKey: (v: string) => void;
+  onQuickCreate: (phase: Phase) => void;
+  addNameRef: React.RefObject<HTMLInputElement>;
+}) {
+  const s = PIECE_STYLE[piece];
+  const activeShortcuts = new Set([...shortcutMap.entries()].map(([k, r]) => `${r.id}:${k}`));
+
+  return (
+    <section
+      onClick={onActivate}
+      className={`rounded-2xl border bg-surface p-3 transition ${
+        active ? `${s.border} ${s.ring}` : "border-border opacity-80 hover:opacity-100"
       }`}
     >
-      {shortcut && (
-        <kbd className={`absolute right-2 top-2 rounded-md border px-1.5 py-0.5 text-xs font-mono font-bold ${
-          isEdges ? "border-accent/30 bg-accent/8 text-accent" : "border-accent-2/30 bg-accent-2/8 text-accent-2"
-        }`}>{shortcut.toUpperCase()}</kbd>
-      )}
-      <span className="pr-8 text-sm font-semibold leading-tight text-white/90 group-hover:text-white">{title}</span>
-      {subtitle && <span className="mt-1 text-xs text-muted">{subtitle}</span>}
-    </button>
+      <header className="mb-2 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className={`h-2.5 w-2.5 rounded-full ${s.dot}`} />
+          <h3 className={`text-sm font-black uppercase tracking-widest ${s.text}`}>
+            {PIECE_LABEL[piece]}
+          </h3>
+        </div>
+        <kbd
+          className={`rounded border px-1.5 py-0.5 text-[10px] font-bold ${
+            active ? `${s.border} ${s.text}` : "border-border text-muted"
+          }`}
+        >
+          {piece === "edges" ? "1" : "2"}
+        </kbd>
+      </header>
+
+      {(["memo", "exec"] as Phase[]).map((phase) => {
+        const list = phase === "memo" ? reasons.memo : reasons.exec;
+        return (
+          <div key={phase} className="mb-2 last:mb-0">
+            <div className="mb-1.5 flex items-center gap-2">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-muted">
+                {PHASE_LABEL[phase]}
+              </span>
+              <span className="h-px flex-1 bg-border" />
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleAdd(phase);
+                }}
+                className="rounded border border-border px-1.5 text-[11px] font-bold text-muted transition hover:text-white"
+                title={`Neuen ${PHASE_LABEL[phase]}-Grund anlegen`}
+              >
+                +
+              </button>
+            </div>
+
+            <div className="flex flex-wrap gap-1.5">
+              {list.map((r) => {
+                const count = countFor(r.id);
+                const sc = r.shortcut?.toLowerCase();
+                const showKey = active && sc && activeShortcuts.has(`${r.id}:${sc}`);
+                return (
+                  <button
+                    key={r.id}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onPick(r);
+                    }}
+                    className={`group relative rounded-lg border px-2.5 py-1.5 text-sm font-semibold transition active:scale-95 ${
+                      count > 0
+                        ? `${s.border} ${s.bg} ${s.text}`
+                        : "border-border bg-surface-2 text-white/85 hover:border-white/25"
+                    }`}
+                  >
+                    {r.name}
+                    {showKey && (
+                      <kbd className="ml-1.5 rounded bg-black/40 px-1 text-[10px] font-bold text-muted">
+                        {sc}
+                      </kbd>
+                    )}
+                    {count > 0 && (
+                      <span
+                        className={`ml-1.5 rounded-full px-1.5 text-[10px] font-black ${s.bg} ${s.text}`}
+                      >
+                        ×{count}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+              {list.length === 0 && (
+                <span className="text-xs text-muted">Noch keine Gründe – mit + anlegen.</span>
+              )}
+            </div>
+
+            {addOpen === phase && (
+              <div
+                className="mt-2 flex gap-1.5 animate-fade-in"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <input
+                  ref={addNameRef}
+                  value={addName}
+                  onChange={(e) => setAddName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      onQuickCreate(phase);
+                    }
+                  }}
+                  placeholder={`Neuer ${PHASE_LABEL[phase]}-Grund`}
+                  className="min-w-0 flex-1 rounded-lg border border-border bg-surface-2 px-2 py-1.5 text-sm outline-none focus:border-accent/60"
+                />
+                <input
+                  value={addKey}
+                  onChange={(e) => setAddKey(e.target.value.slice(0, 1))}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      onQuickCreate(phase);
+                    }
+                  }}
+                  placeholder="Key"
+                  className="w-14 rounded-lg border border-border bg-surface-2 px-2 py-1.5 text-center text-sm outline-none focus:border-accent/60"
+                />
+                <button
+                  onClick={() => onQuickCreate(phase)}
+                  className="rounded-lg border border-accent/50 bg-accent/10 px-3 text-sm font-bold text-accent"
+                >
+                  OK
+                </button>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </section>
   );
 }
 
-function AddTile({ piece, label, onClick, disabled }: {
-  piece: PieceType; label: string; onClick: () => void; disabled?: boolean;
+/* ---------------------------- Erfasste Fehler ----------------------------- */
+
+function DraftList({
+  drafts,
+  onRemove,
+  onComment,
+  commentRefs,
+}: {
+  drafts: Draft[];
+  onRemove: (key: string) => void;
+  onComment: (key: string, value: string) => void;
+  commentRefs: React.MutableRefObject<Map<string, HTMLInputElement | null>>;
 }) {
-  const isEdges = piece === "edges";
+  if (drafts.length === 0) {
+    return (
+      <div className="rounded-xl border border-dashed border-border p-4 text-center text-sm text-muted">
+        Noch kein Grund gewählt. Mehrfach tippen für mehrere Fehler – Edges und Corners
+        gleichzeitig sind kein Problem.
+      </div>
+    );
+  }
+
   return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      className={`group flex min-h-[90px] flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed transition-all duration-200 disabled:opacity-40 ${
-        isEdges
-          ? "border-accent/20 text-accent/50 hover:border-accent/50 hover:bg-accent/5 hover:text-accent"
-          : "border-accent-2/20 text-accent-2/50 hover:border-accent-2/50 hover:bg-accent-2/5 hover:text-accent-2"
-      }`}
-    >
-      <span className="text-2xl leading-none">+</span>
-      <span className="text-xs font-semibold">{label}</span>
-      <kbd className="rounded border border-current/30 bg-current/5 px-1.5 py-0.5 text-[10px] font-mono opacity-70">
-        N
-      </kbd>
-    </button>
+    <ul className="space-y-1.5">
+      {drafts.map((d) => {
+        const s = PIECE_STYLE[d.pieceType];
+        return (
+          <li
+            key={d.key}
+            className={`flex items-center gap-2 rounded-xl border bg-surface px-2.5 py-2 ${s.border}`}
+          >
+            <span className={`shrink-0 text-xs font-bold uppercase tracking-wider ${s.text}`}>
+              {PIECE_LABEL[d.pieceType]}
+            </span>
+            <span className="shrink-0 rounded border border-border px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-muted">
+              {PHASE_LABEL[d.phase]}
+            </span>
+            <span className="shrink-0 text-sm font-semibold">{d.reasonName}</span>
+            <input
+              ref={(el) => {
+                commentRefs.current.set(d.key, el);
+              }}
+              value={d.comment}
+              onChange={(e) => onComment(d.key, e.target.value)}
+              placeholder="Kommentar, z.B. welcher Comm"
+              className="min-w-0 flex-1 rounded-lg bg-surface-2 px-2 py-1 text-sm outline-none placeholder:text-muted/60 focus:ring-1 focus:ring-accent/40"
+            />
+            <button
+              onClick={() => onRemove(d.key)}
+              className="shrink-0 rounded-lg px-2 py-1 text-sm text-muted transition hover:text-danger"
+              title="Fehler entfernen"
+            >
+              ✕
+            </button>
+          </li>
+        );
+      })}
+    </ul>
   );
 }

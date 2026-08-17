@@ -1,51 +1,99 @@
-import { pgTable, serial, text, integer, timestamp, index, pgEnum } from "drizzle-orm/pg-core";
+import {
+  pgTable,
+  serial,
+  text,
+  integer,
+  timestamp,
+  boolean,
+  index,
+  pgEnum,
+} from "drizzle-orm/pg-core";
 
+/** Welches Teil-Set war betroffen. */
 export const pieceTypeEnum = pgEnum("piece_type", ["edges", "corners"]);
 
-export const macroCategories = pgTable("macro_categories", {
-  id: serial("id").primaryKey(),
-  name: text("name").notNull(),
-  // Single keyboard key used as shortcut, e.g. "1", "q". Nullable = no shortcut.
-  shortcut: text("shortcut"),
-  position: integer("position").notNull().default(0),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+/** In welcher Phase des Solves ist der Fehler passiert. */
+export const phaseEnum = pgEnum("phase", ["memo", "exec"]);
 
-export const subCategories = pgTable(
-  "sub_categories",
+/**
+ * Frei erweiterbarer Katalog an Fehlergründen.
+ * Ein Grund gehört immer zu genau einer Phase (Memo oder Execution) und gilt
+ * für Edges wie Corners gleichermassen.
+ */
+export const reasons = pgTable(
+  "reasons",
   {
     id: serial("id").primaryKey(),
-    macroId: integer("macro_id")
-      .notNull()
-      .references(() => macroCategories.id, { onDelete: "cascade" }),
+    phase: phaseEnum("phase").notNull(),
     name: text("name").notNull(),
+    /** Einzelner Tastatur-Shortcut, z.B. "m". Muss global eindeutig sein. */
     shortcut: text("shortcut"),
     position: integer("position").notNull().default(0),
+    /** Archiviert = nicht mehr auswählbar, historische Daten bleiben erhalten. */
+    archived: boolean("archived").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
-    macroIdx: index("sub_macro_idx").on(t.macroId),
+    phaseIdx: index("reasons_phase_idx").on(t.phase),
   })
 );
 
-export const dnfEntries = pgTable(
-  "dnf_entries",
+/**
+ * Ein Versuch (Solve). Entweder Success oder DNF.
+ * Das ist die Basis für die 1000-Attempts-Zählung.
+ */
+export const attempts = pgTable(
+  "attempts",
   {
     id: serial("id").primaryKey(),
-    pieceType: pieceTypeEnum("piece_type").notNull(),
-    macroId: integer("macro_id")
-      .notNull()
-      .references(() => macroCategories.id, { onDelete: "cascade" }),
-    subId: integer("sub_id").references(() => subCategories.id, { onDelete: "set null" }),
+    isDnf: boolean("is_dnf").notNull(),
+    /** Optionale Notiz zum gesamten Solve. */
+    note: text("note"),
     occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
-    occurredIdx: index("dnf_occurred_idx").on(t.occurredAt),
-    macroIdx: index("dnf_macro_idx").on(t.macroId),
+    occurredIdx: index("attempts_occurred_idx").on(t.occurredAt),
   })
 );
 
-export type MacroCategory = typeof macroCategories.$inferSelect;
-export type SubCategory = typeof subCategories.$inferSelect;
-export type DnfEntry = typeof dnfEntries.$inferSelect;
+/**
+ * Einzelner Fehler innerhalb eines DNF.
+ *
+ * Bewusst als eigene Tabelle (1:n), damit pro Solve beliebig viele Fehler
+ * erfasst werden können: Edges + Corners gleichzeitig, Memo + Exec innerhalb
+ * derselben Kategorie, oder auch zweimal derselbe Fehlertyp.
+ */
+export const attemptErrors = pgTable(
+  "attempt_errors",
+  {
+    id: serial("id").primaryKey(),
+    attemptId: integer("attempt_id")
+      .notNull()
+      .references(() => attempts.id, { onDelete: "cascade" }),
+    pieceType: pieceTypeEnum("piece_type").notNull(),
+    phase: phaseEnum("phase").notNull(),
+    reasonId: integer("reason_id").references(() => reasons.id, { onDelete: "set null" }),
+    /** Name-Snapshot, damit die Historie lesbar bleibt, wenn ein Grund gelöscht wird. */
+    reasonName: text("reason_name").notNull(),
+    /** Freitext, z.B. welcher Commutator konkret schiefging. */
+    comment: text("comment"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    attemptIdx: index("attempt_errors_attempt_idx").on(t.attemptId),
+    reasonIdx: index("attempt_errors_reason_idx").on(t.reasonId),
+  })
+);
+
+/** Kleiner Key-Value-Store für Ziel-Einstellungen. */
+export const appSettings = pgTable("app_settings", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+});
+
+export type Reason = typeof reasons.$inferSelect;
+export type Attempt = typeof attempts.$inferSelect;
+export type AttemptError = typeof attemptErrors.$inferSelect;
+
 export type PieceType = "edges" | "corners";
+export type Phase = "memo" | "exec";
