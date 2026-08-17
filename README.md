@@ -47,11 +47,14 @@ Der Startbildschirm hat genau zwei Knöpfe. Der Normalfall ist ein Tastendruck.
 | `D` / `F` | DNF-Dialog öffnen |
 | `Ctrl+Z` | letzten Versuch rückgängig machen (überall) |
 
-Im DNF-Dialog:
+Im DNF-Dialog ist immer eine Kategorie aktiv. Der Dialog **startet bei den Edges**
+und springt **nach jedem erfassten Fehler automatisch zu den Corners** – das ist
+die übliche Reihenfolge. Für einen zweiten Edges-Fehler mit `e` zurückwechseln.
 
 | Taste | Aktion |
 |-------|--------|
-| `1` / `2` | aktive Kategorie: Edges bzw. Corners (bleibt gesetzt) |
+| `e` / `1` | zurück zu Edges |
+| `c` / `2` | zu Corners |
 | Buchstabe | Grund hinzufügen (`v` Vergessen, `k` Commutator, …) |
 | mehrfach | denselben Grund mehrfach erfassen |
 | `/` | Kommentarfeld des zuletzt erfassten Fehlers fokussieren |
@@ -60,11 +63,12 @@ Im DNF-Dialog:
 | `Esc` | abbrechen |
 
 Ein typischer DNF mit Edges-Memo- und Corners-Exec-Fehler ist damit
-`d` `v` `2` `k` `Enter` – fünf Anschläge. Per Maus geht es genauso: beide
-Kategorien stehen nebeneinander, ein Klick auf einen Grund fügt ihn hinzu.
+`d` `v` `k` `Enter` – vier Anschläge, da der Sprung zu den Corners automatisch
+passiert. Per Maus geht es genauso: beide Kategorien stehen nebeneinander, ein
+Klick auf einen Grund fügt ihn in seiner Spalte hinzu.
 
-Die Tasten `1`, `2`, `Enter`, `Esc`, `Leertaste`, `⌫` und `/` sind reserviert und
-können nicht von einem Grund-Shortcut überschrieben werden.
+Die Tasten `e`, `c`, `1`, `2`, `Enter`, `Esc`, `Leertaste`, `⌫` und `/` sind
+reserviert und können nicht von einem Grund-Shortcut überschrieben werden.
 
 ## Seiten
 

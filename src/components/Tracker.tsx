@@ -20,7 +20,18 @@ const PIECE_LABEL: Record<PieceType, string> = { edges: "Edges", corners: "Corne
 const PHASE_LABEL: Record<Phase, string> = { memo: "Memo", exec: "Execution" };
 
 /** Tasten, die die Oberfläche selbst belegt und die kein Grund überschreiben darf. */
-const RESERVED_KEYS = new Set(["1", "2", "enter", "escape", " ", "tab", "backspace", "/"]);
+const RESERVED_KEYS = new Set([
+  "1",
+  "2",
+  "e",
+  "c",
+  "enter",
+  "escape",
+  " ",
+  "tab",
+  "backspace",
+  "/",
+]);
 
 const PIECE_STYLE: Record<
   PieceType,
@@ -97,7 +108,14 @@ export default function Tracker({ data }: { data: TrackerData }) {
     setAddOpen(null);
     setAddName("");
     setAddKey("");
+    setActivePiece("edges");
     setMode("idle");
+  }, []);
+
+  /** Ein DNF startet immer bei den Edges. */
+  const openDnf = useCallback(() => {
+    setActivePiece("edges");
+    setMode("dnf");
   }, []);
 
   /* ------------------------------ Speichern ------------------------------ */
@@ -165,6 +183,9 @@ export default function Tracker({ data }: { data: TrackerData }) {
         comment: "",
       },
     ]);
+    // Nach jedem erfassten Fehler direkt zu den Corners – der übliche Ablauf ist
+    // Edges zuerst. Für einen zweiten Edges-Fehler mit 1 bzw. e zurückwechseln.
+    setActivePiece("corners");
   }, []);
 
   const removeDraft = useCallback((key: string) => {
@@ -232,7 +253,7 @@ export default function Tracker({ data }: { data: TrackerData }) {
         }
         if (key === "d" || key === "f") {
           e.preventDefault();
-          setMode("dnf");
+          openDnf();
           return;
         }
         return;
@@ -249,12 +270,12 @@ export default function Tracker({ data }: { data: TrackerData }) {
         saveDnf(drafts, note);
         return;
       }
-      if (key === "1" || (key === "e" && !shortcutMap.has("e"))) {
+      if (key === "1" || key === "e") {
         e.preventDefault();
         setActivePiece("edges");
         return;
       }
-      if (key === "2" || (key === "c" && !shortcutMap.has("c"))) {
+      if (key === "2" || key === "c") {
         e.preventDefault();
         setActivePiece("corners");
         return;
@@ -293,6 +314,7 @@ export default function Tracker({ data }: { data: TrackerData }) {
     saveSuccess,
     saveDnf,
     resetPanel,
+    openDnf,
     undo,
     addDraft,
     focusLastComment,
@@ -332,7 +354,7 @@ export default function Tracker({ data }: { data: TrackerData }) {
       {mode === "idle" ? (
         <IdleScreen
           onSuccess={saveSuccess}
-          onDnf={() => setMode("dnf")}
+          onDnf={openDnf}
           successRate={successRate}
           totalAttempts={totalAttempts}
           successCount={successCount}
@@ -365,10 +387,9 @@ export default function Tracker({ data }: { data: TrackerData }) {
                 onActivate={() => setActivePiece(piece)}
                 reasons={data.reasons}
                 shortcutMap={shortcutMap}
-                onPick={(reason) => {
-                  setActivePiece(piece);
-                  addDraft(reason, piece);
-                }}
+                // Ein Klick erfasst den Fehler in der geklickten Spalte;
+                // addDraft schaltet danach selbst auf Corners weiter.
+                onPick={(reason) => addDraft(reason, piece)}
                 countFor={(reasonId) => draftCountFor(piece, reasonId)}
                 addOpen={activePiece === piece ? addOpen : null}
                 onToggleAdd={(phase) => {
@@ -412,7 +433,8 @@ export default function Tracker({ data }: { data: TrackerData }) {
               <kbd className="ml-2 text-xs opacity-70">Enter</kbd>
             </button>
             <p className="mt-2 text-center text-[11px] text-muted">
-              <kbd>1</kbd>/<kbd>2</kbd> Edges/Corners · Buchstabe = Grund · <kbd>/</kbd> Kommentar ·{" "}
+              Start bei Edges, nach jedem Fehler weiter zu Corners · <kbd>e</kbd>/<kbd>c</kbd> bzw.{" "}
+              <kbd>1</kbd>/<kbd>2</kbd> wechseln · Buchstabe = Grund · <kbd>/</kbd> Kommentar ·{" "}
               <kbd>⌫</kbd> letzten Fehler löschen · Enter ohne Auswahl = DNF ohne Grund
             </p>
           </div>
@@ -669,7 +691,7 @@ function PieceColumn({
             active ? `${s.border} ${s.text}` : "border-border text-muted"
           }`}
         >
-          {piece === "edges" ? "1" : "2"}
+          {piece === "edges" ? "E · 1" : "C · 2"}
         </kbd>
       </header>
 
