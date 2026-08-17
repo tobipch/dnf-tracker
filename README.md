@@ -57,10 +57,22 @@ die übliche Reihenfolge. Für einen zweiten Edges-Fehler mit `e` zurückwechsel
 | `c` / `2` | zu Corners |
 | Buchstabe | Grund hinzufügen (`v` Vergessen, `k` Commutator, …) |
 | mehrfach | denselben Grund mehrfach erfassen |
-| `/` | Kommentarfeld des zuletzt erfassten Fehlers fokussieren |
+| `Tab` / `/` | Kommentarfeld des zuletzt erfassten Fehlers fokussieren |
 | `⌫` | letzten Fehler wieder entfernen |
 | `Enter` | DNF speichern (ohne Auswahl: DNF ohne Grund) |
 | `Esc` | abbrechen |
+
+Im Kommentarfeld:
+
+| Taste | Aktion |
+|-------|--------|
+| `Enter` | DNF abschliessen und speichern |
+| `Tab` | zum nächsten Kommentar, zuletzt zur Notiz und wieder von vorn |
+| `Esc` | Feld verlassen – danach wechseln `e` und `c` wieder die Kategorie |
+
+`e` und `c` wechseln bewusst **nicht** direkt im Kommentarfeld die Kategorie:
+Kommentare bestehen typischerweise aus Speffz-Buchstaben (`ec`), die sonst nicht
+mehr tippbar wären. Der Weg heraus ist `Esc`.
 
 Ein typischer DNF mit Edges-Memo- und Corners-Exec-Fehler ist damit
 `d` `v` `k` `Enter` – vier Anschläge, da der Sprung zu den Corners automatisch
