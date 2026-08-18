@@ -205,18 +205,24 @@ export default function Tracker({ data }: { data: TrackerData }) {
   }, [drafts]);
 
   /**
-   * Tastatur im Kommentarfeld: Enter schliesst den DNF ab, Tab geht zum
-   * nächsten Kommentar, Esc führt aus dem Feld heraus – danach wechseln e und c
-   * wie gewohnt die Kategorie.
+   * Tastatur im Kommentarfeld: Enter schliesst den DNF ab, e und c wechseln
+   * direkt zur jeweiligen Kategorie, Tab geht zum nächsten Kommentar.
    *
-   * e/c wirken bewusst NICHT direkt im Feld: Kommentare bestehen typischerweise
-   * aus Speffz-Buchstaben ("ec"), die sonst nicht mehr tippbar wären.
+   * Weil e und c damit als Kommandos belegt sind, sind sie im Kommentar nur als
+   * Grossbuchstabe tippbar: "EC" statt "ec".
    */
   const commentKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>, draftKey: string) => {
       if (e.key === "Enter") {
         e.preventDefault();
         saveDnf(drafts, note);
+        return;
+      }
+      // Nur die unmodifizierten Kleinbuchstaben – Shift+E/Shift+C bleiben Text.
+      if ((e.key === "e" || e.key === "c") && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        setActivePiece(e.key === "e" ? "edges" : "corners");
+        e.currentTarget.blur();
         return;
       }
       if (e.key === "Tab") {
@@ -475,7 +481,8 @@ export default function Tracker({ data }: { data: TrackerData }) {
             <p className="mt-2 text-center text-[11px] text-muted">
               Start bei Edges, nach jedem Fehler weiter zu Corners · <kbd>e</kbd>/<kbd>c</kbd> bzw.{" "}
               <kbd>1</kbd>/<kbd>2</kbd> wechseln · Buchstabe = Grund · <kbd>Tab</kbd> Kommentar zum
-              letzten Fehler, dort <kbd>Enter</kbd> zum Abschliessen und <kbd>Esc</kbd> heraus ·{" "}
+              letzten Fehler, dort <kbd>Enter</kbd> zum Abschliessen und <kbd>e</kbd>/<kbd>c</kbd>
+              zum Weiterwechseln ·{" "}
               <kbd>⌫</kbd> letzten Fehler löschen · Enter ohne Auswahl = DNF ohne Grund
             </p>
           </div>
