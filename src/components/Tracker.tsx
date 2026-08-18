@@ -20,7 +20,18 @@ const PIECE_LABEL: Record<PieceType, string> = { edges: "Edges", corners: "Corne
 const PHASE_LABEL: Record<Phase, string> = { memo: "Memo", exec: "Execution" };
 
 /** Tasten, die die Oberfläche selbst belegt und die kein Grund überschreiben darf. */
-const RESERVED_KEYS = new Set(["1", "2", "enter", "escape", " ", "tab", "backspace", "/"]);
+const RESERVED_KEYS = new Set([
+  "1",
+  "2",
+  "e",
+  "c",
+  "enter",
+  "escape",
+  " ",
+  "tab",
+  "backspace",
+  "/",
+]);
 
 const PIECE_STYLE: Record<
   PieceType,
@@ -69,6 +80,7 @@ export default function Tracker({ data }: { data: TrackerData }) {
 
   const commentRefs = useRef<Map<string, HTMLInputElement | null>>(new Map());
   const addNameRef = useRef<HTMLInputElement>(null);
+  const noteRef = useRef<HTMLInputElement>(null);
 
   const allReasons = useMemo(
     () => [...data.reasons.memo, ...data.reasons.exec],
@@ -97,7 +109,14 @@ export default function Tracker({ data }: { data: TrackerData }) {
     setAddOpen(null);
     setAddName("");
     setAddKey("");
+    setActivePiece("edges");
     setMode("idle");
+  }, []);
+
+  /** Ein DNF startet immer bei den Edges. */
+  const openDnf = useCallback(() => {
+    setActivePiece("edges");
+    setMode("dnf");
   }, []);
 
   /* ------------------------------ Speichern ------------------------------ */
@@ -165,6 +184,9 @@ export default function Tracker({ data }: { data: TrackerData }) {
         comment: "",
       },
     ]);
+    // Nach jedem erfassten Fehler direkt zu den Corners – der übliche Ablauf ist
+    // Edges zuerst. Für einen zweiten Edges-Fehler mit 1 bzw. e zurückwechseln.
+    setActivePiece("corners");
   }, []);
 
   const removeDraft = useCallback((key: string) => {
@@ -175,10 +197,41 @@ export default function Tracker({ data }: { data: TrackerData }) {
     setDrafts((prev) => prev.map((d) => (d.key === key ? { ...d, comment: value } : d)));
   }, []);
 
+  /** Tab bzw. "/" springt ins Kommentarfeld des zuletzt erfassten Fehlers. */
   const focusLastComment = useCallback(() => {
     const last = drafts[drafts.length - 1];
-    if (last) window.setTimeout(() => commentRefs.current.get(last.key)?.focus(), 0);
+    const target = last ? commentRefs.current.get(last.key) : noteRef.current;
+    if (target) window.setTimeout(() => target.focus(), 0);
   }, [drafts]);
+
+  /**
+   * Tastatur im Kommentarfeld: Enter schliesst den DNF ab, Tab geht zum
+   * nächsten Kommentar, Esc führt aus dem Feld heraus – danach wechseln e und c
+   * wie gewohnt die Kategorie.
+   *
+   * e/c wirken bewusst NICHT direkt im Feld: Kommentare bestehen typischerweise
+   * aus Speffz-Buchstaben ("ec"), die sonst nicht mehr tippbar wären.
+   */
+  const commentKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>, draftKey: string) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        saveDnf(drafts, note);
+        return;
+      }
+      if (e.key === "Tab") {
+        e.preventDefault();
+        // Reihum durch alle Kommentarfelder und zuletzt die Notiz.
+        const targets = [
+          ...drafts.map((d) => commentRefs.current.get(d.key) ?? null),
+          noteRef.current,
+        ];
+        const idx = drafts.findIndex((d) => d.key === draftKey);
+        targets[(idx + 1) % targets.length]?.focus();
+      }
+    },
+    [drafts, note, saveDnf]
+  );
 
   const quickCreate = useCallback(
     (phase: Phase) => {
@@ -232,7 +285,7 @@ export default function Tracker({ data }: { data: TrackerData }) {
         }
         if (key === "d" || key === "f") {
           e.preventDefault();
-          setMode("dnf");
+          openDnf();
           return;
         }
         return;
@@ -249,22 +302,17 @@ export default function Tracker({ data }: { data: TrackerData }) {
         saveDnf(drafts, note);
         return;
       }
-      if (key === "1" || (key === "e" && !shortcutMap.has("e"))) {
+      if (key === "1" || key === "e") {
         e.preventDefault();
         setActivePiece("edges");
         return;
       }
-      if (key === "2" || (key === "c" && !shortcutMap.has("c"))) {
+      if (key === "2" || key === "c") {
         e.preventDefault();
         setActivePiece("corners");
         return;
       }
-      if (e.key === "Tab") {
-        e.preventDefault();
-        setActivePiece((p) => (p === "edges" ? "corners" : "edges"));
-        return;
-      }
-      if (key === "/") {
+      if (e.key === "Tab" || key === "/") {
         e.preventDefault();
         focusLastComment();
         return;
@@ -293,6 +341,7 @@ export default function Tracker({ data }: { data: TrackerData }) {
     saveSuccess,
     saveDnf,
     resetPanel,
+    openDnf,
     undo,
     addDraft,
     focusLastComment,
@@ -332,7 +381,7 @@ export default function Tracker({ data }: { data: TrackerData }) {
       {mode === "idle" ? (
         <IdleScreen
           onSuccess={saveSuccess}
-          onDnf={() => setMode("dnf")}
+          onDnf={openDnf}
           successRate={successRate}
           totalAttempts={totalAttempts}
           successCount={successCount}
@@ -365,10 +414,9 @@ export default function Tracker({ data }: { data: TrackerData }) {
                 onActivate={() => setActivePiece(piece)}
                 reasons={data.reasons}
                 shortcutMap={shortcutMap}
-                onPick={(reason) => {
-                  setActivePiece(piece);
-                  addDraft(reason, piece);
-                }}
+                // Ein Klick erfasst den Fehler in der geklickten Spalte;
+                // addDraft schaltet danach selbst auf Corners weiter.
+                onPick={(reason) => addDraft(reason, piece)}
                 countFor={(reasonId) => draftCountFor(piece, reasonId)}
                 addOpen={activePiece === piece ? addOpen : null}
                 onToggleAdd={(phase) => {
@@ -389,13 +437,26 @@ export default function Tracker({ data }: { data: TrackerData }) {
             drafts={drafts}
             onRemove={removeDraft}
             onComment={setComment}
+            onCommentKeyDown={commentKeyDown}
             commentRefs={commentRefs}
           />
 
           <div className="rounded-xl border border-border bg-surface p-3">
             <input
+              ref={noteRef}
               value={note}
               onChange={(e) => setNote(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  saveDnf(drafts, note);
+                  return;
+                }
+                if (e.key === "Tab" && drafts.length > 0) {
+                  e.preventDefault();
+                  commentRefs.current.get(drafts[0].key)?.focus();
+                }
+              }}
               placeholder="Notiz zum Solve (optional)"
               className="w-full bg-transparent text-sm outline-none placeholder:text-muted/70"
             />
@@ -412,7 +473,9 @@ export default function Tracker({ data }: { data: TrackerData }) {
               <kbd className="ml-2 text-xs opacity-70">Enter</kbd>
             </button>
             <p className="mt-2 text-center text-[11px] text-muted">
-              <kbd>1</kbd>/<kbd>2</kbd> Edges/Corners · Buchstabe = Grund · <kbd>/</kbd> Kommentar ·{" "}
+              Start bei Edges, nach jedem Fehler weiter zu Corners · <kbd>e</kbd>/<kbd>c</kbd> bzw.{" "}
+              <kbd>1</kbd>/<kbd>2</kbd> wechseln · Buchstabe = Grund · <kbd>Tab</kbd> Kommentar zum
+              letzten Fehler, dort <kbd>Enter</kbd> zum Abschliessen und <kbd>Esc</kbd> heraus ·{" "}
               <kbd>⌫</kbd> letzten Fehler löschen · Enter ohne Auswahl = DNF ohne Grund
             </p>
           </div>
@@ -669,7 +732,7 @@ function PieceColumn({
             active ? `${s.border} ${s.text}` : "border-border text-muted"
           }`}
         >
-          {piece === "edges" ? "1" : "2"}
+          {piece === "edges" ? "E · 1" : "C · 2"}
         </kbd>
       </header>
 
@@ -784,11 +847,13 @@ function DraftList({
   drafts,
   onRemove,
   onComment,
+  onCommentKeyDown,
   commentRefs,
 }: {
   drafts: Draft[];
   onRemove: (key: string) => void;
   onComment: (key: string, value: string) => void;
+  onCommentKeyDown: (e: React.KeyboardEvent<HTMLInputElement>, draftKey: string) => void;
   commentRefs: React.MutableRefObject<Map<string, HTMLInputElement | null>>;
 }) {
   if (drafts.length === 0) {
@@ -822,6 +887,7 @@ function DraftList({
               }}
               value={d.comment}
               onChange={(e) => onComment(d.key, e.target.value)}
+              onKeyDown={(e) => onCommentKeyDown(e, d.key)}
               placeholder="Kommentar, z.B. welcher Comm"
               className="min-w-0 flex-1 rounded-lg bg-surface-2 px-2 py-1 text-sm outline-none placeholder:text-muted/60 focus:ring-1 focus:ring-accent/40"
             />

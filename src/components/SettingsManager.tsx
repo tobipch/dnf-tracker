@@ -205,8 +205,9 @@ export default function SettingsManager({
                 </button>
               </form>
               <p className="mt-2 text-[11px] text-muted">
-                Die Tasten <kbd>1</kbd>, <kbd>2</kbd>, <kbd>Enter</kbd>, <kbd>Esc</kbd>,{" "}
-                <kbd>Leertaste</kbd>, <kbd>⌫</kbd> und <kbd>/</kbd> sind vom Tracker belegt.
+                Die Tasten <kbd>e</kbd>, <kbd>c</kbd>, <kbd>1</kbd>, <kbd>2</kbd>, <kbd>Enter</kbd>,{" "}
+                <kbd>Esc</kbd>, <kbd>Leertaste</kbd>, <kbd>⌫</kbd> und <kbd>/</kbd> sind vom Tracker
+                belegt.
               </p>
             </Card>
           );
