@@ -16,6 +16,7 @@ import {
 } from "recharts";
 import type { Stats } from "@/db/queries";
 import type { PieceType, Phase } from "@/db/schema";
+import { formatTime } from "@/lib/format";
 
 const CLR_EDGE = "#00d4ff";
 const CLR_CORNER = "#a855f7";
@@ -41,7 +42,7 @@ function shortDay(iso: string) {
 }
 
 export default function StatsView({ stats }: { stats: Stats }) {
-  const { goal, totals, scope, matrix, byPhase, byPiece, reasonStats, comments, daily, recent } = stats;
+  const { goal, totals, times, scope, matrix, byPhase, byPiece, reasonStats, comments, daily, recent } = stats;
   const [phaseFilter, setPhaseFilter] = useState<Phase | "all">("all");
 
   const dailyData = daily.map((d, i) => ({
@@ -131,6 +132,19 @@ export default function StatsView({ stats }: { stats: Stats }) {
           color="purple"
         />
       </div>
+
+      {times.timed > 0 && (
+        <div className="grid grid-cols-3 gap-3">
+          <GlowCard label="Bestzeit" value={formatTime(times.best)} color="green" />
+          <GlowCard label="Ø letzte 12" value={formatTime(times.recentAverage)} color="blue" />
+          <GlowCard
+            label="Ø alle Successes"
+            value={formatTime(times.average)}
+            sub={`${times.timed} mit Zeit`}
+            color="neutral"
+          />
+        </div>
+      )}
 
       {/* Verlauf */}
       <ChartCard title="Verlauf pro Tag — Success vs. DNF, kumuliert gegen Ziel">
@@ -347,6 +361,11 @@ export default function StatsView({ stats }: { stats: Stats }) {
                 )}
                 {a.note && <div className="mt-1 text-xs text-muted">{a.note}</div>}
               </div>
+              {a.timeMs !== null && (
+                <span className="shrink-0 font-mono text-[11px] tabular-nums text-white/70">
+                  {formatTime(a.timeMs)}
+                </span>
+              )}
               <time className="shrink-0 font-mono text-[11px] text-muted">
                 {new Date(a.occurredAt).toLocaleString("de-CH", {
                   day: "2-digit",

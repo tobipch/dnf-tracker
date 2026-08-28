@@ -47,6 +47,8 @@ export type RecordResult = { ok: true; attemptId: number } | { ok: false; error:
 export async function recordAttempt(input: {
   isDnf: boolean;
   note?: string | null;
+  timeMs?: number | null;
+  scramble?: string | null;
   errors?: ErrorInput[];
 }): Promise<RecordResult> {
   const errors = input.isDnf ? input.errors ?? [] : [];
@@ -67,10 +69,17 @@ export async function recordAttempt(input: {
   }
 
   const note = (input.note ?? "").toString().trim() || null;
+  const scramble = (input.scramble ?? "").toString().trim() || null;
+
+  const rawTime = input.timeMs;
+  const timeMs =
+    typeof rawTime === "number" && Number.isFinite(rawTime) && rawTime > 0
+      ? Math.round(rawTime)
+      : null;
 
   const inserted = await db
     .insert(attempts)
-    .values({ isDnf: input.isDnf, note })
+    .values({ isDnf: input.isDnf, note, timeMs, scramble })
     .returning({ id: attempts.id });
   const attemptId = inserted[0].id;
 

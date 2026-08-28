@@ -47,6 +47,10 @@ export const attempts = pgTable(
   {
     id: serial("id").primaryKey(),
     isDnf: boolean("is_dnf").notNull(),
+    /** Gestoppte Zeit in Millisekunden; null, wenn ohne Timer erfasst. */
+    timeMs: integer("time_ms"),
+    /** Scramble, an dem der Versuch gemacht wurde. */
+    scramble: text("scramble"),
     /** Optionale Notiz zum gesamten Solve. */
     note: text("note"),
     occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull().defaultNow(),

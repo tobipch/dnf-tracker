@@ -1,8 +1,9 @@
 # 🧩 3BLD Attempt Tracker
 
-Eine TypeScript-Webapp, um **jeden 3BLD-Versuch** als Success oder DNF zu erfassen,
-die Fehlerursachen pro DNF festzuhalten und daraus eine gezielte Übungsliste
-abzuleiten. Single-User, ohne Login.
+Eine TypeScript-Webapp mit **Scramble, Timer und DNF-Analyse in einem** – damit auf
+dem Handy keine zweite App nötig ist. Jeder 3BLD-Versuch wird als Success oder DNF
+erfasst, bei einem DNF die Fehlerursachen, und daraus entsteht eine gezielte
+Übungsliste. Single-User, ohne Login.
 
 Gebaut für ein konkretes Ziel: **1000 Attempts in einem Monat.**
 
@@ -22,7 +23,7 @@ schiefging. Zusätzlich lässt sich pro Solve eine allgemeine Notiz erfassen.
 
 | Tabelle | Inhalt |
 |---------|--------|
-| `attempts` | ein Versuch: Success oder DNF, Zeitpunkt, optionale Notiz |
+| `attempts` | ein Versuch: Success oder DNF, Zeit, Scramble, Zeitpunkt, optionale Notiz |
 | `attempt_errors` | einzelner Fehler eines DNF (Kategorie, Phase, Grund, Kommentar) |
 | `reasons` | frei erweiterbarer Katalog an Gründen je Phase, mit Shortcut |
 | `app_settings` | Ziel (Anzahl Attempts, Zeitraum) |
@@ -37,14 +38,41 @@ DNF-Dialog über das **+** neben der jeweiligen Phase. Gelöschte Gründe verfä
 die Historie nicht: der Name wird beim Erfassen mitgespeichert. Wer einen Grund
 nur aus der Auswahl nehmen will, ohne die Statistik zu verlieren, **archiviert** ihn.
 
+## Scramble und Timer
+
+Der Tracker bringt beides selbst mit, damit auf dem Handy kein App-Wechsel mehr
+nötig ist: oben steht der Scramble, darunter die Timer-Fläche.
+
+1. Scramble ausführen (`↻ Neu` bzw. `N` erzeugt einen neuen).
+2. Timer-Fläche gedrückt halten, bis sie grün wird, dann loslassen – der Timer
+   läuft. Am Laptop macht die `Leertaste` dasselbe.
+3. Während des Solves füllt der Timer den Bildschirm. Jede Berührung bzw. jede
+   Taste stoppt ihn. Solange er läuft, hält ein Wake Lock das Display an.
+4. Die gestoppte Zeit steht bereit – `SUCCESS` oder `DNF` wählen. Die Zeit und
+   der Scramble werden am Versuch gespeichert, danach kommt automatisch der
+   nächste Scramble.
+
+Die Zeit ist optional: wer ohne Timer zählt, drückt einfach direkt `S` oder `D`.
+Der Versuch wird dann ohne Zeit gespeichert.
+
+Scrambles sind zufällige Zugfolgen (25 Züge, keine Wiederholung derselben Fläche,
+keine dreifach besetzte Achse) plus zufällige Orientierung am Schluss, wie bei
+BLD-Scrambles üblich. Das kommt ohne Solver-WASM aus, lädt sofort und funktioniert
+offline – dafür sind es keine WCA-Random-State-Scrambles.
+
+Auf dem Handy lässt sich die Seite über „Zum Homescreen hinzufügen" als App
+installieren; sie startet dann ohne Browser-Leiste.
+
 ## Bedienung
 
-Der Startbildschirm hat genau zwei Knöpfe. Der Normalfall ist ein Tastendruck.
+Der Startbildschirm hat Scramble, Timer und genau zwei Ergebnis-Knöpfe.
 
 | Taste | Aktion |
 |-------|--------|
-| `Leertaste` / `S` | Success erfassen |
+| `Leertaste` | Timer: halten, loslassen zum Starten, beliebige Taste stoppt |
+| `S` | Success erfassen |
 | `D` / `F` | DNF-Dialog öffnen |
+| `N` | neuer Scramble |
 | `Ctrl+Z` | letzten Versuch rückgängig machen (überall) |
 
 Im DNF-Dialog ist immer eine Kategorie aktiv. Der Dialog **startet bei den Edges**
@@ -85,8 +113,9 @@ reserviert und können nicht von einem Grund-Shortcut überschrieben werden.
 
 ## Seiten
 
-- **Tracker** (`/`) – Erfassung plus Zielfortschritt und die letzten Versuche.
-- **Statistiken** (`/stats`) – Zielverlauf gegen Soll-Tempo, Success-Rate pro Tag,
+- **Tracker** (`/`) – Scramble, Timer und Erfassung plus Zielfortschritt, Zeiten
+  (Best, Ø 12, Ø gesamt) und die letzten Versuche.
+- **Statistiken** (`/stats`) – Zielverlauf gegen Soll-Tempo, Zeiten, Success-Rate pro Tag,
   Fehler-Matrix (Edges/Corners × Memo/Exec), Häufigkeit pro Grund, betroffene
   Kategorie pro DNF und die **Übungsliste**: alle Kommentare nach Grund gruppiert
   und nach Häufigkeit sortiert.
@@ -116,6 +145,8 @@ npm run dev                 # http://localhost:3000
 
 Beim ersten Start legt die App die Standard-Gründe und ein Ziel von 1000 Attempts
 über 30 Tage an. Beides ist unter `/settings` änderbar.
+
+Zeiten werden nur über Successes gerechnet – ein DNF hat keine gültige Zeit.
 
 ### Datenbank (Neon)
 
