@@ -46,7 +46,7 @@ export default function SettingsManager({
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-black tracking-tight">
+        <h1 className="text-2xl font-black tracking-tight sm:text-3xl">
           Einstellungen <span className="text-gradient">Setup</span>
         </h1>
         <p className="text-sm text-muted">Ziel, Fehlergründe und Daten verwalten.</p>
@@ -78,8 +78,9 @@ export default function SettingsManager({
               name="target"
               type="number"
               min={1}
+              inputMode="numeric"
               defaultValue={goal.target}
-              className="w-28 rounded-lg border border-border bg-surface-2 px-2.5 py-1.5 text-sm outline-none focus:border-accent/60"
+              className="h-11 w-24 rounded-lg border border-border bg-surface-2 px-2.5 text-sm outline-none focus:border-accent/60"
             />
           </Field>
           <Field label="Von">
@@ -87,7 +88,7 @@ export default function SettingsManager({
               name="start"
               type="date"
               defaultValue={goal.start}
-              className="rounded-lg border border-border bg-surface-2 px-2.5 py-1.5 text-sm outline-none focus:border-accent/60"
+              className="h-11 rounded-lg border border-border bg-surface-2 px-2.5 text-sm outline-none focus:border-accent/60"
             />
           </Field>
           <Field label="Bis">
@@ -95,13 +96,13 @@ export default function SettingsManager({
               name="end"
               type="date"
               defaultValue={goal.end}
-              className="rounded-lg border border-border bg-surface-2 px-2.5 py-1.5 text-sm outline-none focus:border-accent/60"
+              className="h-11 rounded-lg border border-border bg-surface-2 px-2.5 text-sm outline-none focus:border-accent/60"
             />
           </Field>
           <button
             type="submit"
             disabled={isPending}
-            className="rounded-lg border border-accent/50 bg-accent/10 px-4 py-1.5 text-sm font-bold text-accent disabled:opacity-50"
+            className="h-11 rounded-lg border border-accent/50 bg-accent/10 px-4 text-sm font-bold text-accent disabled:opacity-50"
           >
             Speichern
           </button>
@@ -118,58 +119,64 @@ export default function SettingsManager({
                 {list.map((r, i) => (
                   <li
                     key={r.id}
-                    className={`flex items-center gap-1.5 rounded-xl border border-border bg-surface-2 p-1.5 ${
+                    className={`rounded-xl border border-border bg-surface-2 p-1.5 ${
                       r.archived ? "opacity-50" : ""
                     }`}
                   >
-                    <form
-                      onSubmit={(e) => {
-                        e.preventDefault();
-                        run(updateReason, new FormData(e.currentTarget));
-                      }}
-                      className="flex min-w-0 flex-1 items-center gap-1.5"
-                    >
-                      <input type="hidden" name="id" value={r.id} />
-                      <input
-                        name="name"
-                        defaultValue={r.name}
-                        className="min-w-0 flex-1 rounded-lg bg-transparent px-1.5 py-1 text-sm font-semibold outline-none focus:bg-surface"
-                      />
-                      <input
-                        name="shortcut"
-                        defaultValue={r.shortcut ?? ""}
-                        maxLength={1}
-                        placeholder="–"
-                        title="Tastatur-Shortcut"
-                        className="w-9 rounded-lg border border-border bg-surface px-1 py-1 text-center text-xs font-bold outline-none focus:border-accent/60"
-                      />
-                      <button
-                        type="submit"
-                        className="rounded-lg px-1.5 py-1 text-xs text-muted transition hover:text-accent"
-                        title="Speichern"
+                    {/* Am Handy bricht die Zeile um: oben der Name, darunter die
+                        Aktionen mit 40px-Zielen statt winziger Icons. */}
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <form
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          run(updateReason, new FormData(e.currentTarget));
+                        }}
+                        className="flex min-w-0 flex-1 basis-48 items-center gap-1.5"
                       >
-                        ✓
-                      </button>
-                    </form>
+                        <input type="hidden" name="id" value={r.id} />
+                        <input
+                          name="name"
+                          defaultValue={r.name}
+                          className="h-10 min-w-0 flex-1 rounded-lg bg-transparent px-1.5 text-sm font-semibold outline-none focus:bg-surface"
+                        />
+                        <input
+                          name="shortcut"
+                          defaultValue={r.shortcut ?? ""}
+                          maxLength={1}
+                          placeholder="–"
+                          title="Tastatur-Shortcut"
+                          className="h-10 w-10 shrink-0 rounded-lg border border-border bg-surface px-1 text-center text-xs font-bold outline-none focus:border-accent/60"
+                        />
+                        <button
+                          type="submit"
+                          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-base text-muted transition hover:text-accent"
+                          title="Speichern"
+                        >
+                          ✓
+                        </button>
+                      </form>
 
-                    <IconForm action={moveReason} run={run} id={r.id} extra={{ direction: "up" }} disabled={i === 0} label="↑" />
-                    <IconForm
-                      action={moveReason}
-                      run={run}
-                      id={r.id}
-                      extra={{ direction: "down" }}
-                      disabled={i === list.length - 1}
-                      label="↓"
-                    />
-                    <IconForm
-                      action={setReasonArchived}
-                      run={run}
-                      id={r.id}
-                      extra={{ archived: String(!r.archived) }}
-                      label={r.archived ? "↺" : "⊘"}
-                      title={r.archived ? "Reaktivieren" : "Archivieren (bleibt in der Statistik)"}
-                    />
-                    <IconForm action={deleteReason} run={run} id={r.id} label="✕" danger title="Löschen" />
+                      <div className="ml-auto flex shrink-0 items-center gap-1">
+                        <IconForm action={moveReason} run={run} id={r.id} extra={{ direction: "up" }} disabled={i === 0} label="↑" />
+                        <IconForm
+                          action={moveReason}
+                          run={run}
+                          id={r.id}
+                          extra={{ direction: "down" }}
+                          disabled={i === list.length - 1}
+                          label="↓"
+                        />
+                        <IconForm
+                          action={setReasonArchived}
+                          run={run}
+                          id={r.id}
+                          extra={{ archived: String(!r.archived) }}
+                          label={r.archived ? "↺" : "⊘"}
+                          title={r.archived ? "Reaktivieren" : "Archivieren (bleibt in der Statistik)"}
+                        />
+                        <IconForm action={deleteReason} run={run} id={r.id} label="✕" danger title="Löschen" />
+                      </div>
+                    </div>
                   </li>
                 ))}
                 {list.length === 0 && <li className="text-sm text-muted">Noch keine Gründe.</li>}
@@ -188,18 +195,18 @@ export default function SettingsManager({
                   name="name"
                   placeholder={`Neuer ${PHASE_LABEL[phase]}-Grund`}
                   required
-                  className="min-w-0 flex-1 rounded-lg border border-border bg-surface-2 px-2.5 py-1.5 text-sm outline-none focus:border-accent/60"
+                  className="h-11 min-w-0 flex-1 rounded-lg border border-border bg-surface-2 px-2.5 text-sm outline-none focus:border-accent/60"
                 />
                 <input
                   name="shortcut"
                   maxLength={1}
                   placeholder="Key"
-                  className="w-14 rounded-lg border border-border bg-surface-2 px-2 py-1.5 text-center text-sm outline-none focus:border-accent/60"
+                  className="h-11 w-14 shrink-0 rounded-lg border border-border bg-surface-2 px-2 text-center text-sm outline-none focus:border-accent/60"
                 />
                 <button
                   type="submit"
                   disabled={isPending}
-                  className="rounded-lg border border-accent/50 bg-accent/10 px-3 text-sm font-bold text-accent disabled:opacity-50"
+                  className="h-11 shrink-0 rounded-lg border border-accent/50 bg-accent/10 px-4 text-base font-bold text-accent disabled:opacity-50"
                 >
                   +
                 </button>
@@ -232,12 +239,12 @@ export default function SettingsManager({
             name="confirm"
             placeholder="RESET eintippen"
             autoComplete="off"
-            className="w-48 rounded-lg border border-danger/40 bg-surface-2 px-2.5 py-1.5 text-sm outline-none focus:border-danger"
+            className="h-11 w-44 rounded-lg border border-danger/40 bg-surface-2 px-2.5 text-sm outline-none focus:border-danger"
           />
           <button
             type="submit"
             disabled={isPending}
-            className="rounded-lg border border-danger/60 bg-danger/15 px-4 py-1.5 text-sm font-bold text-danger disabled:opacity-50"
+            className="h-11 rounded-lg border border-danger/60 bg-danger/15 px-4 text-sm font-bold text-danger disabled:opacity-50"
           >
             Alle Solves löschen
           </button>
@@ -280,8 +287,8 @@ function IconForm({
         type="submit"
         disabled={disabled}
         title={title}
-        className={`rounded-lg px-1.5 py-1 text-xs transition disabled:opacity-25 ${
-          danger ? "text-muted hover:text-danger" : "text-muted hover:text-white"
+        className={`flex h-10 w-10 items-center justify-center rounded-lg text-sm transition disabled:opacity-25 ${
+          danger ? "text-white/50 hover:text-danger" : "text-white/50 hover:text-white"
         }`}
       >
         {label}
@@ -310,7 +317,7 @@ function Card({
 }) {
   return (
     <div
-      className={`rounded-2xl border bg-surface/70 p-5 backdrop-blur ${
+      className={`rounded-2xl border bg-surface/70 p-4 backdrop-blur sm:p-5 ${
         danger ? "border-danger/40" : "border-border/70"
       }`}
     >

@@ -5,6 +5,8 @@
 html, body {
   background-color: #05070d;
   color: #ddeeff;
+  /* Kein Gummiband-Scrollen beim Erfassen. */
+  overscroll-behavior-y: contain;
 }
 
 /* Subtle dot-grid texture */
@@ -36,6 +38,29 @@ main  { position: relative; z-index: 1; }
 header { position: relative; z-index: 2; }
 
 * { -webkit-tap-highlight-color: transparent; }
+
+/* Kein 300ms-Delay und kein Doppeltipp-Zoom auf Bedienelementen. */
+button, a, input, select, textarea, [role="button"] {
+  touch-action: manipulation;
+}
+
+/*
+ * iOS zoomt beim Fokussieren in jedes Feld mit weniger als 16px Schriftgrösse
+ * und zoomt danach nicht von selbst zurück. Auf dem Handy darum überall 16px.
+ */
+@media (max-width: 639px) {
+  /* !important, weil die Regel gegen Tailwinds Text-Utilities gewinnen muss –
+     ein Elementselektor verliert sonst gegen jede Klasse. */
+  input, select, textarea { font-size: 16px !important; }
+}
+
+/* Safe Areas: Notch oben, Home-Indicator unten. */
+.safe-x {
+  padding-left: max(1rem, env(safe-area-inset-left));
+  padding-right: max(1rem, env(safe-area-inset-right));
+}
+.safe-top { padding-top: env(safe-area-inset-top); }
+.safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
 
 kbd { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 

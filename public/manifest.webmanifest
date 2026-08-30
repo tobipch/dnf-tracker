@@ -1,0 +1,13 @@
+{
+  "name": "3BLD DNF Tracker",
+  "short_name": "3BLD",
+  "description": "Erfasse 3BLD-Versuche und analysiere die Gründe für deine DNFs.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#05070d",
+  "theme_color": "#05070d",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
