@@ -75,7 +75,7 @@ export default function StatsView({ stats }: { stats: Stats }) {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-black tracking-tight">
+        <h1 className="text-2xl font-black tracking-tight sm:text-3xl">
           Statistiken <span className="text-gradient">Analyse</span>
         </h1>
         <p className="text-sm text-muted">
@@ -84,13 +84,13 @@ export default function StatsView({ stats }: { stats: Stats }) {
       </div>
 
       {/* Ziel */}
-      <div className="rounded-2xl border border-border/70 bg-surface/70 p-5 backdrop-blur">
+      <div className="rounded-2xl border border-border/70 bg-surface/70 p-4 backdrop-blur sm:p-5">
         <div className="mb-4 text-xs font-bold uppercase tracking-widest text-muted">
           Ziel: {goal.target} Attempts ({goal.start} – {goal.end})
         </div>
         <div className="flex flex-wrap items-baseline gap-x-6 gap-y-2">
           <div className="flex items-baseline gap-2">
-            <span className="text-gradient text-4xl font-black tabular-nums">{goal.done}</span>
+            <span className="text-gradient text-3xl font-black tabular-nums sm:text-4xl">{goal.done}</span>
             <span className="text-xl font-bold text-muted">/ {goal.target}</span>
           </div>
           <span className="text-sm text-muted">
@@ -134,7 +134,7 @@ export default function StatsView({ stats }: { stats: Stats }) {
 
       {/* Verlauf */}
       <ChartCard title="Verlauf pro Tag — Success vs. DNF, kumuliert gegen Ziel">
-        <ResponsiveContainer width="100%" height={280}>
+        <ResponsiveContainer width="100%" height={260}>
           <ComposedChart data={dailyData} margin={{ left: 0, right: 8 }}>
             <CartesianGrid strokeDasharray="3 3" stroke={GRID_COLOR} />
             <XAxis dataKey="day" stroke={AXIS_COLOR} tick={{ fill: AXIS_COLOR, fontSize: 11 }} />
@@ -246,7 +246,7 @@ export default function StatsView({ stats }: { stats: Stats }) {
               <button
                 key={p}
                 onClick={() => setPhaseFilter(p)}
-                className={`rounded-lg border px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider transition ${
+                className={`flex h-9 items-center rounded-lg border px-3 text-[11px] font-bold uppercase tracking-wider transition ${
                   phaseFilter === p
                     ? "border-accent/50 bg-accent/10 text-accent"
                     : "border-border text-muted hover:text-white"
@@ -299,7 +299,7 @@ export default function StatsView({ stats }: { stats: Stats }) {
                   {items.map((c) => (
                     <span
                       key={c.comment}
-                      className="rounded-lg border border-border bg-surface-2 px-2.5 py-1 text-sm"
+                      className="rounded-lg border border-border bg-surface-2 px-2.5 py-1.5 text-sm"
                       title={`${c.edges}× Edges · ${c.corners}× Corners`}
                     >
                       {c.comment}
@@ -386,7 +386,7 @@ function ChartCard({
   children: React.ReactNode;
 }) {
   return (
-    <div className="rounded-2xl border border-border/70 bg-surface/70 p-5 backdrop-blur">
+    <div className="rounded-2xl border border-border/70 bg-surface/70 p-3 backdrop-blur sm:p-5">
       <div className="mb-4 flex items-center justify-between gap-3">
         <div className="text-xs font-bold uppercase tracking-widest text-muted">{title}</div>
         {action}
@@ -416,8 +416,8 @@ function GlowCard({
   }[color];
 
   return (
-    <div className={`rounded-2xl border bg-surface/70 p-4 backdrop-blur ${styles.border} ${styles.glow}`}>
-      <div className="text-xs uppercase tracking-widest text-muted">{label}</div>
+    <div className={`rounded-2xl border bg-surface/70 p-3 backdrop-blur sm:p-4 ${styles.border} ${styles.glow}`}>
+      <div className="text-[10px] uppercase tracking-widest text-muted sm:text-xs">{label}</div>
       <div className={`mt-1 truncate text-2xl font-black ${styles.text}`} title={String(value)}>
         {value}
       </div>

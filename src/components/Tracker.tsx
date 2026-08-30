@@ -373,7 +373,9 @@ export default function Tracker({ data }: { data: TrackerData }) {
   );
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4 sm:space-y-5">
+      {/* Beim Erfassen eines DNF ist der Zielfortschritt am Handy nur im Weg. */}
+      <div className={mode === "dnf" ? "hidden sm:block" : ""}>
       <GoalBar
         done={goalDone}
         target={data.goal.target}
@@ -383,6 +385,7 @@ export default function Tracker({ data }: { data: TrackerData }) {
         expected={data.goal.expectedByNow}
         todayAttempts={todayAttempts}
       />
+      </div>
 
       {mode === "idle" ? (
         <IdleScreen
@@ -397,7 +400,7 @@ export default function Tracker({ data }: { data: TrackerData }) {
           busy={isPending}
         />
       ) : (
-        <div className="space-y-4 animate-slide-up">
+        <div className="space-y-4 pb-3 animate-slide-up">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-black tracking-tight">
               <span className="text-danger">DNF</span>{" "}
@@ -405,13 +408,13 @@ export default function Tracker({ data }: { data: TrackerData }) {
             </h2>
             <button
               onClick={resetPanel}
-              className="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold text-muted hover:text-white"
+              className="flex h-10 items-center rounded-lg border border-border px-3 text-xs font-semibold text-muted hover:text-white"
             >
-              Abbrechen <kbd className="ml-1 opacity-70">Esc</kbd>
+              Abbrechen <kbd className="ml-1 hidden opacity-70 sm:inline">Esc</kbd>
             </button>
           </div>
 
-          <div className="grid gap-3 md:grid-cols-2">
+          <div className="grid grid-cols-2 gap-2 sm:gap-3">
             {(["edges", "corners"] as PieceType[]).map((piece) => (
               <PieceColumn
                 key={piece}
@@ -468,7 +471,8 @@ export default function Tracker({ data }: { data: TrackerData }) {
             />
           </div>
 
-          <div className="sticky bottom-3 z-10">
+          {/* Opaker Balken mit Safe-Area, sonst liegt er unter dem Home-Indicator. */}
+          <div className="safe-bottom sticky bottom-0 z-10 -mx-4 border-t border-border/60 bg-bg/95 px-4 pt-3 backdrop-blur">
             <button
               onClick={() => saveDnf(drafts, note)}
               disabled={isPending}
@@ -476,9 +480,10 @@ export default function Tracker({ data }: { data: TrackerData }) {
             >
               DNF speichern
               {drafts.length > 0 && <span className="ml-2 opacity-80">· {drafts.length} Fehler</span>}
-              <kbd className="ml-2 text-xs opacity-70">Enter</kbd>
+              <kbd className="ml-2 hidden text-xs opacity-70 sm:inline">Enter</kbd>
             </button>
-            <p className="mt-2 text-center text-[11px] text-muted">
+            {/* Tastatur-Legende ist am Handy nur Ballast. */}
+            <p className="mt-2 hidden pb-3 text-center text-[11px] text-muted sm:block">
               Start bei Edges, nach jedem Fehler weiter zu Corners · <kbd>e</kbd>/<kbd>c</kbd> bzw.{" "}
               <kbd>1</kbd>/<kbd>2</kbd> wechseln · Buchstabe = Grund · <kbd>Tab</kbd> Kommentar zum
               letzten Fehler, dort <kbd>Enter</kbd> zum Abschliessen und <kbd>e</kbd>/<kbd>c</kbd>
@@ -525,10 +530,10 @@ function GoalBar({
 }) {
   const ahead = done >= expected;
   return (
-    <div className="rounded-2xl border border-border bg-surface/70 p-4">
+    <div className="rounded-2xl border border-border bg-surface/70 p-3 sm:p-4">
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
         <div className="flex items-baseline gap-2">
-          <span className="text-gradient text-3xl font-black tabular-nums">{done}</span>
+          <span className="text-gradient text-2xl font-black tabular-nums sm:text-3xl">{done}</span>
           <span className="text-lg font-bold text-muted">/ {target}</span>
           <span className="text-xs font-medium uppercase tracking-widest text-muted">Attempts</span>
         </div>
@@ -547,7 +552,7 @@ function GoalBar({
           </span>
         </div>
       </div>
-      <div className="mt-3 h-2 overflow-hidden rounded-full bg-surface-2">
+      <div className="mt-2.5 h-2 overflow-hidden rounded-full bg-surface-2">
         <div
           className="h-full rounded-full bg-gradient-to-r from-accent to-purple transition-all duration-500"
           style={{ width: `${percent}%` }}
@@ -582,24 +587,24 @@ function IdleScreen({
 }) {
   return (
     <div className="space-y-4">
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-2 gap-3">
         <button
           onClick={onSuccess}
           disabled={busy}
-          className="group rounded-3xl border-2 border-accent-2/50 bg-accent-2/10 py-14 transition active:scale-[0.98] hover:border-accent-2 hover:bg-accent-2/20 hover:shadow-neon-green disabled:opacity-60"
+          className="group rounded-3xl border-2 border-accent-2/50 bg-accent-2/10 py-8 transition sm:py-12 active:scale-[0.98] hover:border-accent-2 hover:bg-accent-2/20 hover:shadow-neon-green disabled:opacity-60"
         >
-          <div className="text-4xl font-black tracking-tight text-accent-2">SUCCESS</div>
-          <div className="mt-2 text-xs font-semibold uppercase tracking-widest text-accent-2/70">
+          <div className="text-2xl font-black tracking-tight text-accent-2 sm:text-4xl">SUCCESS</div>
+          <div className="mt-2 hidden text-xs font-semibold uppercase tracking-widest text-accent-2/70 sm:block">
             Leertaste
           </div>
         </button>
         <button
           onClick={onDnf}
           disabled={busy}
-          className="group rounded-3xl border-2 border-danger/50 bg-danger/10 py-14 transition active:scale-[0.98] hover:border-danger hover:bg-danger/20 hover:shadow-[0_0_20px_rgba(255,45,120,0.45)] disabled:opacity-60"
+          className="group rounded-3xl border-2 border-danger/50 bg-danger/10 py-8 transition sm:py-12 active:scale-[0.98] hover:border-danger hover:bg-danger/20 hover:shadow-[0_0_20px_rgba(255,45,120,0.45)] disabled:opacity-60"
         >
-          <div className="text-4xl font-black tracking-tight text-danger">DNF</div>
-          <div className="mt-2 text-xs font-semibold uppercase tracking-widest text-danger/70">
+          <div className="text-2xl font-black tracking-tight text-danger sm:text-4xl">DNF</div>
+          <div className="mt-2 hidden text-xs font-semibold uppercase tracking-widest text-danger/70 sm:block">
             Taste D
           </div>
         </button>
@@ -617,15 +622,15 @@ function IdleScreen({
           <button
             onClick={onUndo}
             disabled={busy || recent.length === 0}
-            className="rounded-lg border border-border px-2.5 py-1 text-xs font-semibold text-muted transition hover:text-white disabled:opacity-40"
+            className="flex h-9 items-center rounded-lg border border-border px-3 text-xs font-semibold text-muted transition hover:text-white disabled:opacity-40"
           >
-            Rückgängig <kbd className="ml-1 opacity-70">Ctrl+Z</kbd>
+            Rückgängig <kbd className="ml-1 hidden opacity-70 sm:inline">Ctrl+Z</kbd>
           </button>
         </div>
 
         {recent.length === 0 ? (
           <p className="text-sm text-muted">
-            Noch keine Versuche. Leertaste für Success, <kbd>D</kbd> für DNF.
+            Noch keine Versuche.
           </p>
         ) : (
           <ul className="space-y-1.5">
@@ -723,7 +728,7 @@ function PieceColumn({
   return (
     <section
       onClick={onActivate}
-      className={`rounded-2xl border bg-surface p-3 transition ${
+      className={`rounded-2xl border bg-surface p-2 transition sm:p-3 ${
         active ? `${s.border} ${s.ring}` : "border-border opacity-80 hover:opacity-100"
       }`}
     >
@@ -757,7 +762,7 @@ function PieceColumn({
                   e.stopPropagation();
                   onToggleAdd(phase);
                 }}
-                className="rounded border border-border px-1.5 text-[11px] font-bold text-muted transition hover:text-white"
+                className="flex h-8 w-8 items-center justify-center rounded-lg border border-border text-base font-bold text-muted transition hover:text-white"
                 title={`Neuen ${PHASE_LABEL[phase]}-Grund anlegen`}
               >
                 +
@@ -776,7 +781,7 @@ function PieceColumn({
                       e.stopPropagation();
                       onPick(r);
                     }}
-                    className={`group relative rounded-lg border px-2.5 py-1.5 text-sm font-semibold transition active:scale-95 ${
+                    className={`group relative inline-flex min-h-11 items-center rounded-lg border px-2.5 text-sm font-semibold transition active:scale-95 ${
                       count > 0
                         ? `${s.border} ${s.bg} ${s.text}`
                         : "border-border bg-surface-2 text-white/85 hover:border-white/25"
@@ -879,7 +884,7 @@ function DraftList({
         return (
           <li
             key={d.key}
-            className={`flex items-center gap-2 rounded-xl border bg-surface px-2.5 py-2 ${s.border}`}
+            className={`flex flex-wrap items-center gap-x-2 gap-y-1.5 rounded-xl border bg-surface px-2.5 py-2 ${s.border}`}
           >
             <span className={`shrink-0 text-xs font-bold uppercase tracking-wider ${s.text}`}>
               {PIECE_LABEL[d.pieceType]}
@@ -896,11 +901,11 @@ function DraftList({
               onChange={(e) => onComment(d.key, e.target.value)}
               onKeyDown={(e) => onCommentKeyDown(e, d.key)}
               placeholder="Kommentar, z.B. welcher Comm"
-              className="min-w-0 flex-1 rounded-lg bg-surface-2 px-2 py-1 text-sm outline-none placeholder:text-muted/60 focus:ring-1 focus:ring-accent/40"
+              className="h-10 w-full min-w-0 flex-1 basis-40 rounded-lg bg-surface-2 px-2 text-sm outline-none placeholder:text-muted/60 focus:ring-1 focus:ring-accent/40"
             />
             <button
               onClick={() => onRemove(d.key)}
-              className="shrink-0 rounded-lg px-2 py-1 text-sm text-muted transition hover:text-danger"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-base text-muted transition hover:text-danger"
               title="Fehler entfernen"
             >
               ✕

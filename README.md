@@ -83,6 +83,21 @@ Klick auf einen Grund fügt ihn in seiner Spalte hinzu.
 Die Tasten `e`, `c`, `1`, `2`, `Enter`, `Esc`, `Leertaste`, `⌫` und `/` sind
 reserviert und können nicht von einem Grund-Shortcut überschrieben werden.
 
+## Auf dem Handy
+
+Die Oberfläche ist für das iPhone ausgelegt: Der Header trägt dort einen
+Menütrigger statt der ausgeschriebenen Navigation, Success und DNF stehen
+nebeneinander, und im DNF-Dialog liegen Edges und Corners als zwei Spalten
+nebeneinander – alles ohne Scrollen erreichbar. Alle Bedienelemente sind
+mindestens 44 px hoch, Eingabefelder 16 px gross (sonst zoomt iOS beim
+Fokussieren hinein), und Notch wie Home-Indicator werden über die Safe-Area-
+Insets freigehalten.
+
+Über „Zum Homescreen hinzufügen" startet die Seite ohne Safari-Leisten.
+
+Die Tastatur-Hinweise blendet die Oberfläche am Handy aus; am Laptop bleibt
+alles wie beschrieben.
+
 ## Seiten
 
 - **Tracker** (`/`) – Erfassung plus Zielfortschritt und die letzten Versuche.
