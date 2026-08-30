@@ -13,13 +13,10 @@ export default function Nav() {
   const pathname = usePathname();
   return (
     <header className="border-b border-border/60 bg-bg/85 backdrop-blur-xl">
-      <nav className="mx-auto flex max-w-5xl items-center gap-1 overflow-x-auto px-3 py-2.5 sm:px-4 sm:py-3">
-        <span className="mr-3 flex shrink-0 items-baseline gap-1.5 sm:mr-6">
-          <span className="text-gradient text-lg font-black tracking-tight sm:text-xl">3BLD</span>
-          {/* Auf dem Handy zählt jeder Pixel – der Untertitel entfällt dort. */}
-          <span className="hidden text-xs font-medium tracking-widest text-muted uppercase sm:inline">
-            Tracker
-          </span>
+      <nav className="mx-auto flex max-w-5xl items-center gap-1 px-4 py-3">
+        <span className="mr-6 flex items-baseline gap-1.5">
+          <span className="text-gradient text-xl font-black tracking-tight">3BLD</span>
+          <span className="text-xs font-medium tracking-widest text-muted uppercase">DNF Tracker</span>
         </span>
 
         {links.map((l) => {
@@ -28,7 +25,7 @@ export default function Nav() {
             <Link
               key={l.href}
               href={l.href}
-              className={`relative shrink-0 rounded-lg px-2.5 py-1.5 text-sm font-semibold tracking-wide transition-all duration-200 sm:px-3.5 ${
+              className={`relative rounded-lg px-3.5 py-1.5 text-sm font-semibold tracking-wide transition-all duration-200 ${
                 active ? "text-accent" : "text-muted hover:text-white"
               }`}
             >
@@ -44,7 +41,7 @@ export default function Nav() {
         })}
 
         {/* Right-side accent line */}
-        <div className="ml-auto hidden h-px w-16 bg-gradient-to-r from-accent/40 to-transparent sm:block" />
+        <div className="ml-auto h-px w-16 bg-gradient-to-r from-accent/40 to-transparent" />
       </nav>
 
       {/* Neon bottom border */}

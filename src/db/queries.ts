@@ -115,19 +115,8 @@ export type RecentAttempt = {
   id: number;
   occurredAt: string;
   isDnf: boolean;
-  timeMs: number | null;
-  scramble: string | null;
   note: string | null;
   errors: { pieceType: PieceType; phase: Phase; reasonName: string; comment: string | null }[];
-};
-
-/** Zeiten werden nur über erfolgreiche Solves gerechnet – ein DNF hat keine gültige Zeit. */
-export type TimeStats = {
-  best: number | null;
-  average: number | null;
-  /** Schnitt der letzten 12 Successes, wie ein Ao12 ohne Streichresultate. */
-  recentAverage: number | null;
-  timed: number;
 };
 
 export type TrackerData = {
@@ -135,36 +124,15 @@ export type TrackerData = {
   goal: GoalProgress;
   totals: { attempts: number; success: number; dnf: number; successRate: number };
   today: { attempts: number; success: number; dnf: number };
-  times: TimeStats;
   recent: RecentAttempt[];
 };
-
-/** Erwartet Zeiten in absteigender Reihenfolge (neueste zuerst). */
-function computeTimeStats(successTimes: number[]): TimeStats {
-  if (successTimes.length === 0) {
-    return { best: null, average: null, recentAverage: null, timed: 0 };
-  }
-  const sum = successTimes.reduce((a, b) => a + b, 0);
-  const last12 = successTimes.slice(0, 12);
-  return {
-    best: Math.min(...successTimes),
-    average: Math.round(sum / successTimes.length),
-    recentAverage: Math.round(last12.reduce((a, b) => a + b, 0) / last12.length),
-    timed: successTimes.length,
-  };
-}
 
 export async function getTrackerData(): Promise<TrackerData> {
   const [reasonRows, goal, attemptRows] = await Promise.all([
     getReasons(),
     getGoal(),
     db
-      .select({
-        id: attempts.id,
-        isDnf: attempts.isDnf,
-        timeMs: attempts.timeMs,
-        occurredAt: attempts.occurredAt,
-      })
+      .select({ id: attempts.id, isDnf: attempts.isDnf, occurredAt: attempts.occurredAt })
       .from(attempts)
       .orderBy(desc(attempts.occurredAt), desc(attempts.id)),
   ]);
@@ -176,16 +144,11 @@ export async function getTrackerData(): Promise<TrackerData> {
   let todaySuccess = 0;
   let todayDnf = 0;
 
-  const successTimes: number[] = [];
-
   for (const a of attemptRows) {
     const key = dayKey(new Date(a.occurredAt));
     dayCounts.set(key, (dayCounts.get(key) ?? 0) + 1);
     if (a.isDnf) dnf++;
-    else {
-      success++;
-      if (a.timeMs !== null) successTimes.push(a.timeMs);
-    }
+    else success++;
     if (key === today) {
       if (a.isDnf) todayDnf++;
       else todaySuccess++;
@@ -207,7 +170,6 @@ export async function getTrackerData(): Promise<TrackerData> {
       successRate: total > 0 ? Math.round((success / total) * 1000) / 10 : 0,
     },
     today: { attempts: todaySuccess + todayDnf, success: todaySuccess, dnf: todayDnf },
-    times: computeTimeStats(successTimes),
     recent,
   };
 }
@@ -238,8 +200,6 @@ async function loadAttemptsWithErrors(ids: number[]): Promise<RecentAttempt[]> {
       id: a.id,
       occurredAt: new Date(a.occurredAt).toISOString(),
       isDnf: a.isDnf,
-      timeMs: a.timeMs,
-      scramble: a.scramble,
       note: a.note,
       errors: byAttempt.get(a.id) ?? [],
     }));
@@ -278,7 +238,6 @@ export type DayBucket = {
 export type Stats = {
   goal: GoalProgress;
   totals: { attempts: number; success: number; dnf: number; successRate: number };
-  times: TimeStats;
   /** Nur Edges / nur Corners / beides / kein Grund erfasst – pro DNF. */
   scope: { edgesOnly: number; cornersOnly: number; both: number; unspecified: number };
   matrix: { pieceType: PieceType; phase: Phase; count: number }[];
@@ -313,7 +272,6 @@ export async function getStats(): Promise<Stats> {
 
   let success = 0;
   let dnf = 0;
-  const successTimes: number[] = [];
   const scope = { edgesOnly: 0, cornersOnly: 0, both: 0, unspecified: 0 };
 
   for (const a of attemptRows) {
@@ -334,7 +292,6 @@ export async function getStats(): Promise<Stats> {
     } else {
       bucket.success++;
       success++;
-      if (a.timeMs !== null) successTimes.push(a.timeMs);
     }
     dayBuckets.set(key, bucket);
   }
@@ -441,7 +398,6 @@ export async function getStats(): Promise<Stats> {
       dnf,
       successRate: total > 0 ? Math.round((success / total) * 1000) / 10 : 0,
     },
-    times: computeTimeStats(successTimes),
     scope,
     matrix,
     byPhase,

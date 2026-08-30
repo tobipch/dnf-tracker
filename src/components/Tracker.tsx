@@ -4,9 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from
 import type { Reason, PieceType, Phase } from "@/db/schema";
 import type { TrackerData } from "@/db/queries";
 import { recordAttempt, undoLastAttempt, createReason } from "@/app/actions";
-import { randomScramble } from "@/lib/scramble";
-import { formatTime } from "@/lib/format";
-import { useTimer } from "@/lib/useTimer";
 
 type Draft = {
   key: string;
@@ -73,18 +70,6 @@ export default function Tracker({ data }: { data: TrackerData }) {
   const [addName, setAddName] = useState("");
   const [addKey, setAddKey] = useState("");
 
-  // Scramble wird erst nach dem Mount erzeugt, sonst weicht das Server-HTML ab.
-  const [scramble, setScramble] = useState<string | null>(null);
-  // Zeit des gestoppten Solves, der noch als Success oder DNF gewertet werden muss.
-  const [pendingTime, setPendingTime] = useState<number | null>(null);
-
-  const newScramble = useCallback(() => setScramble(randomScramble()), []);
-  useEffect(() => {
-    setScramble(randomScramble());
-  }, []);
-
-  const timer = useTimer(useCallback((ms: number) => setPendingTime(ms), []));
-
   // Optimistische Zähler, damit die Zahlen sofort reagieren.
   const [pendingSuccess, setPendingSuccess] = useState(0);
   const [pendingDnf, setPendingDnf] = useState(0);
@@ -137,38 +122,26 @@ export default function Tracker({ data }: { data: TrackerData }) {
   /* ------------------------------ Speichern ------------------------------ */
 
   const saveSuccess = useCallback(() => {
-    const timeMs = pendingTime;
-    const usedScramble = scramble;
     setPendingSuccess((n) => n + 1);
-    setPendingTime(null);
-    timer.reset();
-    newScramble();
     startTransition(async () => {
-      const res = await recordAttempt({ isDnf: false, timeMs, scramble: usedScramble });
+      const res = await recordAttempt({ isDnf: false });
       if (!res.ok) {
         setPendingSuccess((n) => Math.max(0, n - 1));
         flash({ kind: "err", text: res.error });
       } else {
-        flash({ kind: "ok", text: timeMs ? `Success ✓ ${formatTime(timeMs)}` : "Success ✓" });
+        flash({ kind: "ok", text: "Success ✓" });
       }
     });
-  }, [flash, pendingTime, scramble, timer, newScramble]);
+  }, [flash]);
 
   const saveDnf = useCallback(
     (list: Draft[], attemptNote: string) => {
-      const timeMs = pendingTime;
-      const usedScramble = scramble;
       setPendingDnf((n) => n + 1);
-      setPendingTime(null);
-      timer.reset();
-      newScramble();
       resetPanel();
       startTransition(async () => {
         const res = await recordAttempt({
           isDnf: true,
           note: attemptNote,
-          timeMs,
-          scramble: usedScramble,
           errors: list.map((d) => ({
             pieceType: d.pieceType,
             phase: d.phase,
@@ -187,7 +160,7 @@ export default function Tracker({ data }: { data: TrackerData }) {
         }
       });
     },
-    [flash, resetPanel, pendingTime, scramble, timer, newScramble]
+    [flash, resetPanel]
   );
 
   const undo = useCallback(() => {
@@ -311,18 +284,7 @@ export default function Tracker({ data }: { data: TrackerData }) {
       const key = e.key.toLowerCase();
 
       if (mode === "idle") {
-        // Läuft der Timer, stoppt ihn jede Taste.
-        if (timer.state === "running") {
-          e.preventDefault();
-          timer.pressStart();
-          return;
-        }
-        if (e.key === " ") {
-          e.preventDefault();
-          if (!e.repeat) timer.pressStart();
-          return;
-        }
-        if (key === "s") {
+        if (e.key === " " || key === "s") {
           e.preventDefault();
           saveSuccess();
           return;
@@ -330,11 +292,6 @@ export default function Tracker({ data }: { data: TrackerData }) {
         if (key === "d" || key === "f") {
           e.preventDefault();
           openDnf();
-          return;
-        }
-        if (key === "n") {
-          e.preventDefault();
-          newScramble();
           return;
         }
         return;
@@ -379,21 +336,8 @@ export default function Tracker({ data }: { data: TrackerData }) {
       }
     }
 
-    function onKeyUp(e: KeyboardEvent) {
-      const target = e.target as HTMLElement | null;
-      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) return;
-      if (mode === "idle" && e.key === " ") {
-        e.preventDefault();
-        timer.pressEnd();
-      }
-    }
-
     window.addEventListener("keydown", onKey);
-    window.addEventListener("keyup", onKeyUp);
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      window.removeEventListener("keyup", onKeyUp);
-    };
+    return () => window.removeEventListener("keydown", onKey);
   }, [
     mode,
     drafts,
@@ -407,32 +351,7 @@ export default function Tracker({ data }: { data: TrackerData }) {
     undo,
     addDraft,
     focusLastComment,
-    timer,
-    newScramble,
   ]);
-
-  /* --------------------- Display während des Solves an --------------------- */
-
-  useEffect(() => {
-    if (timer.state !== "running") return;
-    let lock: { release: () => Promise<void> } | null = null;
-    let released = false;
-
-    // Ein 3BLD-Solve dauert Minuten – ohne Wake Lock dunkelt das Handy mitten
-    // im Memo ab. Nicht jeder Browser kann das, daher rein optional.
-    navigator.wakeLock
-      ?.request("screen")
-      .then((l) => {
-        if (released) l.release();
-        else lock = l;
-      })
-      .catch(() => {});
-
-    return () => {
-      released = true;
-      lock?.release().catch(() => {});
-    };
-  }, [timer.state]);
 
   useEffect(() => {
     if (addOpen) window.setTimeout(() => addNameRef.current?.focus(), 0);
@@ -453,30 +372,6 @@ export default function Tracker({ data }: { data: TrackerData }) {
     [drafts]
   );
 
-  // Während des Solves bleibt nur der Timer stehen – nichts soll ablenken und
-  // jede Berührung soll stoppen.
-  if (timer.state === "running") {
-    return (
-      <div
-        onPointerDown={(e) => {
-          e.preventDefault();
-          timer.pressStart();
-        }}
-        className="fixed inset-0 z-50 flex select-none items-center justify-center bg-bg"
-        style={{ touchAction: "none" }}
-      >
-        <div className="text-center">
-          <div className="text-6xl font-black tabular-nums tracking-tight text-white sm:text-8xl">
-            {formatTime(timer.elapsed)}
-          </div>
-          <div className="mt-4 text-xs font-bold uppercase tracking-widest text-muted">
-            Tippen zum Stoppen
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-5">
       <GoalBar
@@ -490,16 +385,6 @@ export default function Tracker({ data }: { data: TrackerData }) {
       />
 
       {mode === "idle" ? (
-        <>
-        <ScrambleBar scramble={scramble} onNew={newScramble} />
-        <TimerPad
-          state={timer.state}
-          elapsed={timer.elapsed}
-          pendingTime={pendingTime}
-          onPressStart={timer.pressStart}
-          onPressEnd={timer.pressEnd}
-          times={data.times}
-        />
         <IdleScreen
           onSuccess={saveSuccess}
           onDnf={openDnf}
@@ -510,11 +395,9 @@ export default function Tracker({ data }: { data: TrackerData }) {
           recent={data.recent}
           onUndo={undo}
           busy={isPending}
-          pendingTime={pendingTime}
         />
-        </>
       ) : (
-        <div className="space-y-4 pb-2 animate-slide-up">
+        <div className="space-y-4 animate-slide-up">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-black tracking-tight">
               <span className="text-danger">DNF</span>{" "}
@@ -528,7 +411,7 @@ export default function Tracker({ data }: { data: TrackerData }) {
             </button>
           </div>
 
-          <div className="grid grid-cols-2 gap-2 sm:gap-3">
+          <div className="grid gap-3 md:grid-cols-2">
             {(["edges", "corners"] as PieceType[]).map((piece) => (
               <PieceColumn
                 key={piece}
@@ -585,9 +468,7 @@ export default function Tracker({ data }: { data: TrackerData }) {
             />
           </div>
 
-          {/* Opaker Balken: sticky über transparentem Grund würde den darunter
-              liegenden Text durchscheinen lassen. */}
-          <div className="sticky bottom-0 z-10 -mx-4 border-t border-border/60 bg-bg/95 px-4 pb-3 pt-3 backdrop-blur">
+          <div className="sticky bottom-3 z-10">
             <button
               onClick={() => saveDnf(drafts, note)}
               disabled={isPending}
@@ -597,8 +478,7 @@ export default function Tracker({ data }: { data: TrackerData }) {
               {drafts.length > 0 && <span className="ml-2 opacity-80">· {drafts.length} Fehler</span>}
               <kbd className="ml-2 text-xs opacity-70">Enter</kbd>
             </button>
-            {/* Die Tastatur-Legende ist am Handy nur Ballast. */}
-            <p className="mt-2 hidden text-center text-[11px] text-muted sm:block">
+            <p className="mt-2 text-center text-[11px] text-muted">
               Start bei Edges, nach jedem Fehler weiter zu Corners · <kbd>e</kbd>/<kbd>c</kbd> bzw.{" "}
               <kbd>1</kbd>/<kbd>2</kbd> wechseln · Buchstabe = Grund · <kbd>Tab</kbd> Kommentar zum
               letzten Fehler, dort <kbd>Enter</kbd> zum Abschliessen und <kbd>e</kbd>/<kbd>c</kbd>
@@ -618,104 +498,6 @@ export default function Tracker({ data }: { data: TrackerData }) {
           }`}
         >
           {toast.text}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ------------------------------- Scramble --------------------------------- */
-
-function ScrambleBar({ scramble, onNew }: { scramble: string | null; onNew: () => void }) {
-  return (
-    <div className="rounded-2xl border border-border bg-surface/70 p-3 sm:p-4">
-      <div className="mb-1.5 flex items-center justify-between">
-        <span className="text-[10px] font-bold uppercase tracking-widest text-muted">Scramble</span>
-        <button
-          onClick={onNew}
-          className="rounded-lg border border-border px-2.5 py-1 text-xs font-semibold text-muted transition hover:text-white"
-          title="Neuer Scramble"
-        >
-          ↻ Neu <kbd className="ml-1 opacity-70">N</kbd>
-        </button>
-      </div>
-      <p className="font-mono text-sm leading-snug tracking-wide text-white/90 sm:text-lg sm:leading-relaxed">
-        {scramble ?? "…"}
-      </p>
-    </div>
-  );
-}
-
-/* --------------------------------- Timer ---------------------------------- */
-
-function TimerPad({
-  state,
-  elapsed,
-  pendingTime,
-  onPressStart,
-  onPressEnd,
-  times,
-}: {
-  state: "idle" | "holding" | "ready" | "running";
-  elapsed: number;
-  pendingTime: number | null;
-  onPressStart: () => void;
-  onPressEnd: () => void;
-  times: TrackerData["times"];
-}) {
-  const ready = state === "ready";
-  const holding = state === "holding";
-
-  return (
-    <div className="space-y-2">
-      <div
-        onPointerDown={(e) => {
-          e.preventDefault();
-          onPressStart();
-        }}
-        onPointerUp={(e) => {
-          e.preventDefault();
-          onPressEnd();
-        }}
-        onPointerCancel={onPressEnd}
-        style={{ touchAction: "none" }}
-        className={`select-none rounded-3xl border-2 py-7 text-center transition-colors sm:py-10 ${
-          ready
-            ? "border-accent-2 bg-accent-2/20 shadow-neon-green"
-            : holding
-              ? "border-yellow/60 bg-yellow/10"
-              : "border-border bg-surface"
-        }`}
-      >
-        <div
-          className={`text-5xl font-black tabular-nums tracking-tight sm:text-6xl ${
-            ready ? "text-accent-2" : pendingTime !== null ? "text-white" : "text-white/80"
-          }`}
-        >
-          {formatTime(pendingTime ?? elapsed)}
-        </div>
-        <div className="mt-3 text-[11px] font-bold uppercase tracking-widest text-muted">
-          {ready
-            ? "Loslassen zum Starten"
-            : holding
-              ? "Halten …"
-              : pendingTime !== null
-                ? "Zeit steht – Success oder DNF wählen"
-                : "Halten zum Starten · Leertaste"}
-        </div>
-      </div>
-
-      {times.timed > 0 && (
-        <div className="flex justify-center gap-4 text-[11px] text-muted">
-          <span>
-            Best <span className="font-bold text-accent-2 tabular-nums">{formatTime(times.best)}</span>
-          </span>
-          <span>
-            Ø 12 <span className="font-bold text-white tabular-nums">{formatTime(times.recentAverage)}</span>
-          </span>
-          <span>
-            Ø gesamt <span className="font-bold text-white tabular-nums">{formatTime(times.average)}</span>
-          </span>
         </div>
       )}
     </div>
@@ -743,10 +525,10 @@ function GoalBar({
 }) {
   const ahead = done >= expected;
   return (
-    <div className="rounded-2xl border border-border bg-surface/70 p-3 sm:p-4">
+    <div className="rounded-2xl border border-border bg-surface/70 p-4">
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
         <div className="flex items-baseline gap-2">
-          <span className="text-gradient text-2xl font-black tabular-nums sm:text-3xl">{done}</span>
+          <span className="text-gradient text-3xl font-black tabular-nums">{done}</span>
           <span className="text-lg font-bold text-muted">/ {target}</span>
           <span className="text-xs font-medium uppercase tracking-widest text-muted">Attempts</span>
         </div>
@@ -765,7 +547,7 @@ function GoalBar({
           </span>
         </div>
       </div>
-      <div className="mt-2.5 h-2 overflow-hidden rounded-full bg-surface-2">
+      <div className="mt-3 h-2 overflow-hidden rounded-full bg-surface-2">
         <div
           className="h-full rounded-full bg-gradient-to-r from-accent to-purple transition-all duration-500"
           style={{ width: `${percent}%` }}
@@ -787,7 +569,6 @@ function IdleScreen({
   recent,
   onUndo,
   busy,
-  pendingTime,
 }: {
   onSuccess: () => void;
   onDnf: () => void;
@@ -798,29 +579,28 @@ function IdleScreen({
   recent: TrackerData["recent"];
   onUndo: () => void;
   busy: boolean;
-  pendingTime: number | null;
 }) {
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid gap-3 sm:grid-cols-2">
         <button
           onClick={onSuccess}
           disabled={busy}
-          className="group rounded-3xl border-2 border-accent-2/50 bg-accent-2/10 py-7 transition sm:py-12 active:scale-[0.98] hover:border-accent-2 hover:bg-accent-2/20 hover:shadow-neon-green disabled:opacity-60"
+          className="group rounded-3xl border-2 border-accent-2/50 bg-accent-2/10 py-14 transition active:scale-[0.98] hover:border-accent-2 hover:bg-accent-2/20 hover:shadow-neon-green disabled:opacity-60"
         >
-          <div className="text-2xl font-black tracking-tight text-accent-2 sm:text-4xl">SUCCESS</div>
+          <div className="text-4xl font-black tracking-tight text-accent-2">SUCCESS</div>
           <div className="mt-2 text-xs font-semibold uppercase tracking-widest text-accent-2/70">
-            {pendingTime !== null ? formatTime(pendingTime) : "Taste S"}
+            Leertaste
           </div>
         </button>
         <button
           onClick={onDnf}
           disabled={busy}
-          className="group rounded-3xl border-2 border-danger/50 bg-danger/10 py-7 transition sm:py-12 active:scale-[0.98] hover:border-danger hover:bg-danger/20 hover:shadow-[0_0_20px_rgba(255,45,120,0.45)] disabled:opacity-60"
+          className="group rounded-3xl border-2 border-danger/50 bg-danger/10 py-14 transition active:scale-[0.98] hover:border-danger hover:bg-danger/20 hover:shadow-[0_0_20px_rgba(255,45,120,0.45)] disabled:opacity-60"
         >
-          <div className="text-2xl font-black tracking-tight text-danger sm:text-4xl">DNF</div>
+          <div className="text-4xl font-black tracking-tight text-danger">DNF</div>
           <div className="mt-2 text-xs font-semibold uppercase tracking-widest text-danger/70">
-            {pendingTime !== null ? formatTime(pendingTime) : "Taste D"}
+            Taste D
           </div>
         </button>
       </div>
@@ -845,7 +625,7 @@ function IdleScreen({
 
         {recent.length === 0 ? (
           <p className="text-sm text-muted">
-            Noch keine Versuche. Timer halten zum Starten, danach <kbd>S</kbd> oder <kbd>D</kbd>.
+            Noch keine Versuche. Leertaste für Success, <kbd>D</kbd> für DNF.
           </p>
         ) : (
           <ul className="space-y-1.5">
@@ -878,11 +658,6 @@ function IdleScreen({
                     <span className="text-accent-2/80">Success</span>
                   )}
                 </span>
-                {a.timeMs !== null && (
-                  <span className="shrink-0 font-mono text-[11px] tabular-nums text-white/70">
-                    {formatTime(a.timeMs)}
-                  </span>
-                )}
                 <time className="shrink-0 text-[11px] tabular-nums text-muted">
                   {new Date(a.occurredAt).toLocaleTimeString("de-CH", {
                     hour: "2-digit",
@@ -948,7 +723,7 @@ function PieceColumn({
   return (
     <section
       onClick={onActivate}
-      className={`rounded-2xl border bg-surface p-2 transition sm:p-3 ${
+      className={`rounded-2xl border bg-surface p-3 transition ${
         active ? `${s.border} ${s.ring}` : "border-border opacity-80 hover:opacity-100"
       }`}
     >
@@ -1001,7 +776,7 @@ function PieceColumn({
                       e.stopPropagation();
                       onPick(r);
                     }}
-                    className={`group relative rounded-lg border px-2 py-1.5 text-xs font-semibold transition active:scale-95 sm:px-2.5 sm:text-sm ${
+                    className={`group relative rounded-lg border px-2.5 py-1.5 text-sm font-semibold transition active:scale-95 ${
                       count > 0
                         ? `${s.border} ${s.bg} ${s.text}`
                         : "border-border bg-surface-2 text-white/85 hover:border-white/25"
@@ -1104,7 +879,7 @@ function DraftList({
         return (
           <li
             key={d.key}
-            className={`flex flex-wrap items-center gap-x-2 gap-y-1.5 rounded-xl border bg-surface px-2.5 py-2 ${s.border}`}
+            className={`flex items-center gap-2 rounded-xl border bg-surface px-2.5 py-2 ${s.border}`}
           >
             <span className={`shrink-0 text-xs font-bold uppercase tracking-wider ${s.text}`}>
               {PIECE_LABEL[d.pieceType]}
@@ -1121,7 +896,7 @@ function DraftList({
               onChange={(e) => onComment(d.key, e.target.value)}
               onKeyDown={(e) => onCommentKeyDown(e, d.key)}
               placeholder="Kommentar, z.B. welcher Comm"
-              className="w-full min-w-0 flex-1 basis-40 rounded-lg bg-surface-2 px-2 py-1 text-sm outline-none placeholder:text-muted/60 focus:ring-1 focus:ring-accent/40"
+              className="min-w-0 flex-1 rounded-lg bg-surface-2 px-2 py-1 text-sm outline-none placeholder:text-muted/60 focus:ring-1 focus:ring-accent/40"
             />
             <button
               onClick={() => onRemove(d.key)}

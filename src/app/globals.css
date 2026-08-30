@@ -5,8 +5,6 @@
 html, body {
   background-color: #05070d;
   color: #ddeeff;
-  /* Kein Pull-to-Refresh während eines Solves. */
-  overscroll-behavior-y: contain;
 }
 
 /* Subtle dot-grid texture */
