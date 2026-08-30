@@ -67,13 +67,13 @@ Im Kommentarfeld:
 | Taste | Aktion |
 |-------|--------|
 | `Enter` | DNF abschliessen und speichern |
-| `e` / `c` | direkt weiter zu Edges bzw. Corners (verlässt das Feld) |
 | `Tab` | zum nächsten Kommentar, zuletzt zur Notiz und wieder von vorn |
-| `Esc` | Feld verlassen |
+| `Esc` | Feld verlassen – danach wechseln `e` und `c` wieder die Kategorie |
 
-> **Achtung:** Weil `e` und `c` auch im Kommentarfeld als Kommando wirken, sind
-> sie dort nur als **Grossbuchstabe** tippbar – also `EC` statt `ec`. Alle anderen
-> Zeichen inklusive `Shift+E`/`Shift+C` gehen normal ins Feld.
+Im Kommentarfeld selbst sind `e` und `c` **kein** Kommando, sondern Text: als
+Kommando haben sie jeden Kommentar unmöglich gemacht, der eines der beiden
+Zeichen enthält – bei Speffz-Buchstaben also praktisch jeden. Der Weg zur
+anderen Kategorie führt über `Esc`, am Handy einfach über die andere Spalte.
 
 Ein typischer DNF mit Edges-Memo- und Corners-Exec-Fehler ist damit
 `d` `v` `k` `Enter` – vier Anschläge, da der Sprung zu den Corners automatisch

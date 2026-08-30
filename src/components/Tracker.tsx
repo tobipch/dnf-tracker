@@ -205,24 +205,19 @@ export default function Tracker({ data }: { data: TrackerData }) {
   }, [drafts]);
 
   /**
-   * Tastatur im Kommentarfeld: Enter schliesst den DNF ab, e und c wechseln
-   * direkt zur jeweiligen Kategorie, Tab geht zum nächsten Kommentar.
+   * Tastatur im Kommentarfeld: Enter schliesst den DNF ab, Tab geht zum
+   * nächsten Kommentar, Esc führt aus dem Feld heraus – danach wechseln e und c
+   * wieder die Kategorie.
    *
-   * Weil e und c damit als Kommandos belegt sind, sind sie im Kommentar nur als
-   * Grossbuchstabe tippbar: "EC" statt "ec".
+   * Im Feld selbst sind e und c bewusst KEINE Kommandos: sie haben das Tippen
+   * unmöglich gemacht, sobald ein Kommentar eines der beiden Zeichen enthielt –
+   * bei Speffz-Buchstaben also ständig.
    */
   const commentKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>, draftKey: string) => {
       if (e.key === "Enter") {
         e.preventDefault();
         saveDnf(drafts, note);
-        return;
-      }
-      // Nur die unmodifizierten Kleinbuchstaben – Shift+E/Shift+C bleiben Text.
-      if ((e.key === "e" || e.key === "c") && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        e.preventDefault();
-        setActivePiece(e.key === "e" ? "edges" : "corners");
-        e.currentTarget.blur();
         return;
       }
       if (e.key === "Tab") {
@@ -466,6 +461,9 @@ export default function Tracker({ data }: { data: TrackerData }) {
                   commentRefs.current.get(drafts[0].key)?.focus();
                 }
               }}
+              autoCapitalize="sentences"
+              autoCorrect="off"
+              spellCheck={false}
               placeholder="Notiz zum Solve (optional)"
               className="w-full bg-transparent text-sm outline-none placeholder:text-muted/70"
             />
@@ -486,8 +484,7 @@ export default function Tracker({ data }: { data: TrackerData }) {
             <p className="mt-2 hidden pb-3 text-center text-[11px] text-muted sm:block">
               Start bei Edges, nach jedem Fehler weiter zu Corners · <kbd>e</kbd>/<kbd>c</kbd> bzw.{" "}
               <kbd>1</kbd>/<kbd>2</kbd> wechseln · Buchstabe = Grund · <kbd>Tab</kbd> Kommentar zum
-              letzten Fehler, dort <kbd>Enter</kbd> zum Abschliessen und <kbd>e</kbd>/<kbd>c</kbd>
-              zum Weiterwechseln ·{" "}
+              letzten Fehler, dort <kbd>Enter</kbd> zum Abschliessen und <kbd>Esc</kbd> heraus ·{" "}
               <kbd>⌫</kbd> letzten Fehler löschen · Enter ohne Auswahl = DNF ohne Grund
             </p>
           </div>
@@ -903,6 +900,10 @@ function DraftList({
               value={d.comment}
               onChange={(e) => onComment(d.key, e.target.value)}
               onKeyDown={(e) => onCommentKeyDown(e, d.key)}
+              autoCapitalize="none"
+              autoCorrect="off"
+              autoComplete="off"
+              spellCheck={false}
               placeholder="Kommentar, z.B. welcher Comm"
               className="h-10 w-full min-w-0 flex-1 basis-40 rounded-lg bg-surface-2 px-2 text-sm outline-none placeholder:text-muted/60 focus:ring-1 focus:ring-accent/40"
             />
