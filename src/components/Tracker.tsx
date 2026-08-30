@@ -752,7 +752,7 @@ function PieceColumn({
         const list = phase === "memo" ? reasons.memo : reasons.exec;
         return (
           <div key={phase} className="mb-2 last:mb-0">
-            <div className="mb-1.5 flex items-center gap-2">
+            <div className="mb-1 flex items-center gap-2">
               <span className="text-[10px] font-bold uppercase tracking-widest text-muted">
                 {PHASE_LABEL[phase]}
               </span>
@@ -762,14 +762,17 @@ function PieceColumn({
                   e.stopPropagation();
                   onToggleAdd(phase);
                 }}
-                className="flex h-8 w-8 items-center justify-center rounded-lg border border-border text-base font-bold text-muted transition hover:text-white"
+                className="flex h-7 w-7 items-center justify-center rounded-lg border border-border text-sm font-bold text-muted transition hover:text-white"
                 title={`Neuen ${PHASE_LABEL[phase]}-Grund anlegen`}
               >
                 +
               </button>
             </div>
 
-            <div className="flex flex-wrap gap-1.5">
+            {/* Ein Grund pro Zeile: bei langen Listen bricht eine Chip-Reihe
+                sonst unregelmässig um und wird unlesbar. Volle Spaltenbreite
+                trifft sich auch flacher noch sicher. */}
+            <div className="flex flex-col gap-1">
               {list.map((r) => {
                 const count = countFor(r.id);
                 const sc = r.shortcut?.toLowerCase();
@@ -781,25 +784,25 @@ function PieceColumn({
                       e.stopPropagation();
                       onPick(r);
                     }}
-                    className={`group relative inline-flex min-h-11 items-center rounded-lg border px-2.5 text-sm font-semibold transition active:scale-95 ${
+                    className={`flex min-h-9 w-full items-center justify-between gap-1.5 rounded-lg border px-2.5 py-1 text-left text-sm font-semibold transition active:scale-[0.98] ${
                       count > 0
                         ? `${s.border} ${s.bg} ${s.text}`
                         : "border-border bg-surface-2 text-white/85 hover:border-white/25"
                     }`}
                   >
-                    {r.name}
-                    {showKey && (
-                      <kbd className="ml-1.5 rounded bg-black/40 px-1 text-[10px] font-bold text-muted">
-                        {sc}
-                      </kbd>
-                    )}
-                    {count > 0 && (
-                      <span
-                        className={`ml-1.5 rounded-full px-1.5 text-[10px] font-black ${s.bg} ${s.text}`}
-                      >
-                        ×{count}
-                      </span>
-                    )}
+                    <span className="truncate">{r.name}</span>
+                    <span className="flex shrink-0 items-center gap-1">
+                      {count > 0 && (
+                        <span className={`rounded-full px-1.5 text-[10px] font-black ${s.bg} ${s.text}`}>
+                          ×{count}
+                        </span>
+                      )}
+                      {showKey && (
+                        <kbd className="rounded bg-black/40 px-1 text-[10px] font-bold text-muted">
+                          {sc}
+                        </kbd>
+                      )}
+                    </span>
                   </button>
                 );
               })}
